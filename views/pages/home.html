@@ -49,7 +49,7 @@
             </div>
             <div class="field-row">
               <div class="field">
-                <label for="bkTime">Pickup time</label>
+                <label for="bkTime">Pickup time (Brisbane)</label>
                 <select id="bkTime" name="time" required></select>
               </div>
               <div class="field">
@@ -60,9 +60,11 @@
             <p class="hint" id="bkReturn">Return by: choose a date</p>
 
             <dl class="quote" id="quote">
+              <div id="qListRow" hidden><dt id="qListLabel">Rental</dt><dd id="qList">–</dd></div>
+              <div class="quote-discount" id="qDiscountRow" hidden><dt>Multi-day discount</dt><dd id="qDiscount">–</dd></div>
               <div><dt>Rental (ex GST)</dt><dd id="qSubtotal">–</dd></div>
               <div><dt>GST</dt><dd id="qGst">–</dd></div>
-              <div class="quote-total"><dt>Total (AUD)</dt><dd id="qTotal">–</dd></div>
+              <div class="quote-total"><dt id="qTotalLabel">Total</dt><dd id="qTotal">–</dd></div>
               <div class="quote-tokens"><dt>Tokens to pay</dt><dd id="qTokens">–</dd></div>
             </dl>
             <p class="hint" id="qRate"></p>
@@ -93,10 +95,11 @@
       <div class="container">
         <h2 id="pricingTitle">Pricing</h2>
         <div class="price-stats">
-          <div class="card"><strong id="pxAud">A$99.00</strong><span>per 24 hours, inc GST</span></div>
+          <div class="card"><strong id="pxPrice">A$99.00</strong><span>per 24 hours, inc GST</span></div>
           <div class="card"><strong id="pxTokens">–</strong><span>tokens per 24 hours</span></div>
-          <div class="card"><strong>1 token = US$1</strong><span id="pxRate">today's rate</span></div>
+          <div class="card"><strong id="pxToken">1 token = US$1</strong><span id="pxRate">today's rate</span></div>
         </div>
+        <p class="price-note" id="pxDiscount">Longer hire saves: 10% off day 2, 20% off day 3, 30% off day 4 and 40% off day 5 onwards.</p>
       </div>
     </section>
 
@@ -124,7 +127,7 @@
           <h2 id="howTitle">How it works</h2>
         </div>
         <ol class="steps steps-4">
-          <li class="step card"><span class="step-num">1</span><h3>Register</h3><p>Create an account with your details. Registration is open to people within {{radius_km}} km of our depot.</p></li>
+          <li class="step card"><span class="step-num">1</span><h3>Register</h3><p>Create an account with your details. Anyone can register; bookings are for people within {{radius_km}} km of our depot.</p></li>
           <li class="step card"><span class="step-num">2</span><h3>Verify your licence</h3><p>Upload a photo of your licence. We check it, then delete the photo straight away.</p></li>
           <li class="step card"><span class="step-num">3</span><h3>Add your insurance</h3><p>Tell us your insurer and confirm your {{indemnity}} indemnity cover.</p></li>
           <li class="step card"><span class="step-num">4</span><h3>Buy tokens and book</h3><p>Top up tokens, pick your time and you're set. Message us any time from your account.</p></li>
@@ -155,7 +158,7 @@
             <p class="hint" id="hubDate"></p>
             <p class="hint">Queensland doesn't use daylight saving (AEST, UTC+10).</p>
             <h3 class="mt">Exchange rate</h3>
-            <p class="big-figure" id="hubFx">US$1.00 = A$–</p>
+            <p class="big-figure" id="hubFx">US$1 = A$–</p>
             <p class="hint" id="hubFxSource"></p>
           </div>
           <div class="card hub-card">

@@ -64,6 +64,7 @@ const PAGES = {
   '/terms': { view: 'legal/terms.html', title: 'Terms of Service' },
   '/ai-policy': { view: 'legal/ai-policy.html', title: 'AI Policy (ISO/IEC 42001)' },
   '/security-policy': { view: 'legal/security-policy.html', title: 'Security Policy (ISO/IEC 27001)' },
+  '/token-policy': { view: 'legal/token-policy.html', title: 'Token Policy' },
 };
 const NOT_FOUND = { view: 'pages/404.html', title: 'Page not found' };
 

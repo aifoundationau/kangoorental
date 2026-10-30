@@ -1,12 +1,14 @@
 import {
-  api, getMe, getConfig, formatAud, formatUsd, formatTokens, formatRate, formatDateTime, formatStamp, toast,
-  showError, setBusy, escapeHtml, withShrunkLicence,
+  api, getMe, getConfig, formatAud, formatUsd, formatPrice, quotePrices, formatTokens, formatRate, formatDateTime, formatStamp,
+  getDeviceLocation, toast, showError, setBusy, escapeHtml, withShrunkLicence,
 } from './common.js';
+import { pricingCurrency } from './prefs.js';
 
 const $ = (id) => document.getElementById(id);
 let me = null;
 let cfg = null;
 let chatTimer = null;
+let area = null; // last "Check my location" result; bookings check again each time
 
 const LICENCE_TEXT = {
   verified: ['ok', 'Verified'],
@@ -44,7 +46,13 @@ function renderOverview() {
   const [cls, text] = LICENCE_TEXT[me.licenceStatus];
   const ins = me.insurer && me.indemnityConfirmed && me.policyExpiry >= cfg.today;
   const day = cfg.dailyQuote.tokenCents;
+  const radius = cfg.bookingRadiusKm;
+  const where = !area ? `Bookings are open to people within ${radius} km of our depot. We check your location each time you book.`
+    : area.inArea ? `You're ${area.distanceKm} km from our depot, inside our ${radius} km booking area.`
+      : `You appear to be ${area.distanceKm} km away. Bookings are only open within ${radius} km of our depot.`;
   $('readyList').innerHTML = `
+    <li class="${!area ? 'wait' : area.inArea ? 'ok' : 'bad'}"><strong>Location:</strong> ${where}
+      <button class="link-button" type="button" data-check-location>${area ? 'Check again' : 'Check my location'}</button></li>
     <li class="${cls}"><strong>Licence:</strong> ${text} <a href="#licence" data-goto="licence">View</a></li>
     <li class="${ins ? 'ok' : 'bad'}"><strong>Insurance:</strong> ${ins ? `${escapeHtml(me.insurer)}, valid to ${escapeHtml(me.policyExpiry)}` : 'Add your insurance details'} <a href="#insurance" data-goto="insurance">${ins ? 'Edit' : 'Add'}</a></li>
     <li class="${me.tokenCents >= day ? 'ok' : 'bad'}"><strong>Tokens:</strong> ${formatTokens(me.tokenCents)} (one day is ${formatTokens(day)}) <a href="#tokens" data-goto="tokens">Buy tokens</a></li>`;
@@ -82,7 +90,15 @@ function renderProfile() {
   $('profileFixed').innerHTML = `
     <div><dt>Name</dt><dd>${escapeHtml(me.fullName)}</dd></div>
     <div><dt>Email</dt><dd>${escapeHtml(me.email)}</dd></div>
-    <div><dt>Date of birth</dt><dd>${escapeHtml(me.dob)}</dd></div>`;
+    <div><dt>Date of birth</dt><dd>${escapeHtml(me.dob)}</dd></div>
+    <div><dt>Sign-in</dt><dd>${me.googleLinked ? 'Google' : ''}${me.googleLinked && me.hasPassword ? ' or ' : ''}${me.hasPassword ? 'Email and password' : ''}</dd></div>`;
+  // Google-only accounts have no password to change, and confirm deletion by typing DELETE instead.
+  $('passwordSection').hidden = !me.hasPassword;
+  if (!me.hasPassword) {
+    $('delPwLabel').textContent = 'Type DELETE';
+    $('delPw').type = 'text';
+    $('delPw').autocomplete = 'off';
+  }
   $('pPhone').value = me.phone || '';
   $('pAddress').value = me.addressLine || '';
   $('pSuburb').value = me.suburb || '';
@@ -91,13 +107,15 @@ function renderProfile() {
 }
 
 function renderTokens() {
-  $('tokRate').textContent = `US$1.00 = A$${formatRate(cfg.fx.rate)}`;
+  $('tokRate').textContent = `US$1 = A$${formatRate(cfg.fx.rate)}`;
   const q = cfg.dailyQuote;
-  $('tokDay').textContent = `${formatAud(q.totalCents)} inc GST = ${formatTokens(q.tokenCents)} tokens`;
+  $('tokDay').textContent = `${formatPrice(quotePrices(q).total)} inc GST = ${formatTokens(q.tokenCents)} tokens`;
   $('packs').innerHTML = cfg.tokenPacks.map((n) => {
     const days = Math.floor((n * 100) / q.tokenCents);
+    // Stripe charges US$1 per token; Australian and New Zealand visitors see the approximate AUD cost.
+    const cost = pricingCurrency() === 'AUD' ? `≈ ${formatAud(n * 100 * cfg.fx.rate)}` : formatUsd(n * 100);
     return `<button class="pack" type="button" data-tokens="${n}">
-      <strong>${n} tokens</strong><span>${formatUsd(n * 100)}</span>
+      <strong>${n} tokens</strong><span>${cost}</span>
       <small>${days >= 1 ? `about ${days} day${days > 1 ? 's' : ''} hire` : 'top-up'}</small></button>`;
   }).join('');
   const modes = {
@@ -116,7 +134,7 @@ function bookingCard(b, { compact = false } = {}) {
   return `<article class="booking-card ${b.status}">
     <header><strong>${escapeHtml(b.ref)}</strong><span class="status-pill ${b.status === 'cancelled' ? 'bad' : b.status === 'completed' ? '' : 'ok'}">${statusLabel}</span></header>
     <p><strong>Pickup:</strong> ${formatDateTime(b.startAt)}<br><strong>Return:</strong> ${formatDateTime(b.endAt)}</p>
-    ${compact ? '' : `<p class="hint">${b.days} × 24 hours &middot; ${formatAud(b.totalCents)} inc GST &middot; ${formatTokens(b.tokenCents)} tokens
+    ${compact ? '' : `<p class="hint">${b.days} × 24 hours &middot; ${formatPrice({ aud: b.totalCents, usd: b.tokenCents })} inc GST &middot; ${formatTokens(b.tokenCents)} tokens
       (at US$1 = A$${formatRate(b.fxRate)})${b.refundedTokenCents ? ` &middot; ${formatTokens(b.refundedTokenCents)} tokens refunded` : ''}</p>`}
     ${canCancel && !compact ? `<button class="btn btn-small btn-ghost" data-cancel="${b.id}">Cancel booking</button>` : ''}
   </article>`;
@@ -334,7 +352,8 @@ function bindForms() {
     e.preventDefault();
     if (!confirm('Delete your account permanently? This cannot be undone.')) return;
     try {
-      await api('/account/delete', { method: 'POST', body: { password: $('delPw').value } });
+      const value = $('delPw').value;
+      await api('/account/delete', { method: 'POST', body: me.hasPassword ? { password: value } : { confirm: value.trim().toUpperCase() } });
       window.location.href = '/';
     } catch (err) {
       toast(err.message, 'error');
@@ -349,6 +368,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   bindForms();
+  $('readyList').addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-check-location]')) return;
+    try {
+      const { lat, lng } = await getDeviceLocation();
+      area = await api('/geo/check', { method: 'POST', body: { lat, lng } });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    renderOverview();
+  });
   renderTokens();
   await handleReturnParams();
   await refreshMe();
@@ -359,4 +388,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
   showTab(tabFromHash());
   window.addEventListener('hashchange', () => showTab(tabFromHash()));
+  // Redraw prices and dates when the visitor changes settings in the location panel.
+  window.addEventListener('kangoo:prefs', () => {
+    renderTokens();
+    loadBookings();
+    if ($('txList').innerHTML.trim()) loadTransactions();
+    if ($('chat').dataset.loaded === '1') loadChat();
+  });
 });

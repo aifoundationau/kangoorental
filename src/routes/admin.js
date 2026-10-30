@@ -3,7 +3,7 @@ import {
   firestore, col, allDocs, docData, nowIso, getSettings, setSettings, audit, FieldValue,
 } from '../db.js';
 import { HttpError, requireAdmin, requireSuperadmin, hashPassword, destroyAllSessions } from '../security.js';
-import { str, int, validDate, brisbaneToday, quote, PATTERNS } from '../util.js';
+import { str, int, validDate, brisbaneToday, quote, ceilWhole, PATTERNS } from '../util.js';
 import { currentRate, refreshLiveRate } from '../fx.js';
 import { publicUser, getUser, createUser } from './auth.js';
 import { cancelBooking } from './bookings.js';
@@ -23,7 +23,7 @@ const customerView = (u) => publicUser(u, {
 router.get('/admin/stats', async (req, res) => {
   const now = Date.now();
   const since = new Date(now - 30 * 86400000).toISOString();
-  const customers = col.users.where('role', '==', 'customer');
+  const customers = col.users.where('role', '==', 'supporter');
   const [customerCount, pending, liveBookings, threads, purchases, tokens] = await Promise.all([
     customers.where('disabled', '==', false).count().get(),
     customers.where('licenceStatus', '==', 'pending').count().get(),
@@ -48,14 +48,17 @@ router.get('/admin/stats', async (req, res) => {
 
 /* ---------- Settings: pricing, currency conversion and site options (superadmin) ---------- */
 
+const wholeCents = (cents) => ceilWhole(cents / 100) * 100;
+
 const SETTING_RULES = {
   business_name: (v) => str(v, { field: 'Business name', max: 80 }),
   price_basis: (v) => {
     if (!['aud', 'tokens'].includes(v)) throw new HttpError(400, 'Price basis must be AUD or tokens.');
     return v;
   },
-  daily_rate_aud_cents: (v) => int(v, { field: 'Daily rate (AUD)', min: 100, max: 10000000 }),
-  daily_rate_token_cents: (v) => int(v, { field: 'Daily rate (tokens)', min: 100, max: 10000000 }),
+  // Prices are whole dollars and whole tokens, rounded up.
+  daily_rate_aud_cents: (v) => wholeCents(int(v, { field: 'Daily rate (AUD)', min: 100, max: 10000000 })),
+  daily_rate_token_cents: (v) => wholeCents(int(v, { field: 'Daily rate (tokens)', min: 100, max: 10000000 })),
   gst_rate_bp: (v) => int(v, { field: 'GST rate', min: 0, max: 5000 }),
   fx_mode: (v) => {
     if (!['live', 'manual'].includes(v)) throw new HttpError(400, 'Exchange rate mode must be live or manual.');
@@ -74,7 +77,7 @@ const SETTING_RULES = {
     return packs.join(',');
   },
   min_driver_age: (v) => int(v, { field: 'Minimum driver age', min: 16, max: 99 }),
-  registration_radius_km: (v) => int(v, { field: 'Registration radius', min: 1, max: 2000 }),
+  registration_radius_km: (v) => int(v, { field: 'Booking radius', min: 1, max: 2000 }),
   pickup_label: (v) => str(v, { field: 'Pickup location', max: 160 }),
   pickup_lat: (v) => { const n = Number(v); if (!(n >= -90 && n <= 90)) throw new HttpError(400, 'Latitude is invalid.'); return n; },
   pickup_lng: (v) => { const n = Number(v); if (!(n >= -180 && n <= 180)) throw new HttpError(400, 'Longitude is invalid.'); return n; },
@@ -85,7 +88,7 @@ const SETTING_RULES = {
   max_advance_days: (v) => int(v, { field: 'Maximum advance days', min: 1, max: 730 }),
   first_pickup_hour: (v) => int(v, { field: 'First pickup hour', min: 0, max: 23 }),
   last_pickup_hour: (v) => int(v, { field: 'Last pickup hour', min: 0, max: 23 }),
-  required_indemnity_cents: (v) => int(v, { field: 'Required indemnity', min: 0, max: 100000000000 }),
+  required_indemnity_cents: (v) => wholeCents(int(v, { field: 'Required indemnity', min: 0, max: 100000000000 })),
   contact_email: (v) => str(v, { field: 'Contact email', required: false, max: 120 }),
   contact_phone: (v) => str(v, { field: 'Contact phone', required: false, max: 30 }),
   announcement: (v) => str(v, { field: 'Announcement', required: false, max: 300 }),
@@ -200,7 +203,7 @@ router.delete('/admin/blocks/:id', async (req, res) => {
 
 router.get('/admin/users', async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
-  let users = allDocs(await col.users.where('role', '==', 'customer').get());
+  let users = allDocs(await col.users.where('role', '==', 'supporter').get());
   if (q) {
     users = users.filter((u) => [u.fullName, u.email, u.licenceNumber, u.phone]
       .some((v) => String(v || '').toLowerCase().includes(q)));
@@ -211,7 +214,7 @@ router.get('/admin/users', async (req, res) => {
 
 router.get('/admin/users/:id', async (req, res) => {
   const u = await getUser(req.params.id);
-  if (!u || u.role !== 'customer') throw new HttpError(404, 'Customer not found.');
+  if (!u || u.role !== 'supporter') throw new HttpError(404, 'Customer not found.');
   const [bookings, transactions] = await Promise.all([
     col.bookings.where('userId', '==', u.id).get(),
     col.tokenTransactions.where('userId', '==', u.id).get(),
@@ -225,7 +228,7 @@ router.get('/admin/users/:id', async (req, res) => {
 
 async function requireCustomer(id) {
   const u = await getUser(id);
-  if (!u || u.role !== 'customer') throw new HttpError(404, 'Customer not found.');
+  if (!u || u.role !== 'supporter') throw new HttpError(404, 'Customer not found.');
   return u;
 }
 
@@ -242,24 +245,24 @@ router.post('/admin/users/:id/licence', async (req, res) => {
 
 router.post('/admin/users/:id/tokens', async (req, res) => {
   const id = String(req.params.id);
-  // Accepts tokens with up to two decimals, e.g. 12.50.
+  // Whole tokens only, e.g. 10 or -5.
   const tokens = Number(req.body?.tokens);
-  const delta = Math.round(tokens * 100);
-  if (!Number.isFinite(tokens) || delta === 0 || Math.abs(delta) > 10000000) {
-    throw new HttpError(400, 'Enter a non-zero token adjustment, e.g. 10 or -5.50.');
+  if (!Number.isInteger(tokens) || tokens === 0 || Math.abs(tokens) > 100000) {
+    throw new HttpError(400, 'Enter a non-zero whole number of tokens, e.g. 10 or -5.');
   }
+  const delta = tokens * 100;
   const note = str(req.body?.note, { field: 'Reason', min: 3, max: 200 });
   await firestore.runTransaction(async (t) => {
     const ref = col.users.doc(id);
     const snap = await t.get(ref);
-    if (!snap.exists || snap.data().role !== 'customer') throw new HttpError(404, 'Customer not found.');
+    if (!snap.exists || snap.data().role !== 'supporter') throw new HttpError(404, 'Customer not found.');
     if ((snap.data().tokenCents || 0) + delta < 0) throw new HttpError(400, 'Balance cannot go below zero.');
     t.update(ref, { tokenCents: FieldValue.increment(delta) });
     t.create(col.tokenTransactions.doc(), {
       userId: id, deltaCents: delta, kind: 'adjustment', provider: 'admin', note, createdBy: req.user.id, createdAt: nowIso(),
     });
   });
-  audit(req.user.id, 'tokens.adjust', `user ${id} ${(delta / 100).toFixed(2)}: ${note}`, req.ip);
+  audit(req.user.id, 'tokens.adjust', `user ${id} ${tokens}: ${note}`, req.ip);
   res.json({ ok: true });
 });
 

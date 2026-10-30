@@ -151,7 +151,7 @@ async function openCustomer(id) {
     <h4>Adjust tokens</h4>
     <form class="inline-form" data-tokens-form>
       <label class="sr-only" for="adjTokens">Tokens</label>
-      <input id="adjTokens" type="number" step="0.01" placeholder="e.g. 10 or -5.50" required>
+      <input id="adjTokens" type="number" step="1" placeholder="e.g. 10 or -5" required>
       <label class="sr-only" for="adjNote">Reason</label>
       <input id="adjNote" placeholder="Reason" required minlength="3">
       <button class="btn btn-small" type="submit">Apply</button>

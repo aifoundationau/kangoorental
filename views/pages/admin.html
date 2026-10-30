@@ -102,11 +102,11 @@
                 <div class="field-row">
                   <div class="field" id="audRateField">
                     <label for="pAud">Daily rate, AUD ex GST</label>
-                    <input id="pAud" type="number" min="1" step="0.01" required>
+                    <input id="pAud" type="number" min="1" step="1" required>
                   </div>
                   <div class="field" id="tokenRateField">
                     <label for="pTok">Daily rate, tokens ex GST (1 token = US$1)</label>
-                    <input id="pTok" type="number" min="1" step="0.01" required>
+                    <input id="pTok" type="number" min="1" step="1" required>
                   </div>
                   <div class="field">
                     <label for="pGst">GST %</label>
@@ -123,7 +123,7 @@
                   <span><strong>Manual rate.</strong> Use the rate you enter below.</span></label>
                 <div class="field-row">
                   <div class="field">
-                    <label for="pManual">Manual rate (AUD per US$1.00)</label>
+                    <label for="pManual">Manual rate (AUD per US$1)</label>
                     <input id="pManual" type="number" min="0.5" max="5" step="0.0001" required>
                   </div>
                   <div class="field">
@@ -167,7 +167,7 @@
                 <div class="field"><label for="s_pickup_lng">Longitude</label><input id="s_pickup_lng" data-key="pickup_lng" type="number" step="0.0001"></div>
               </div>
               <div class="field-row three">
-                <div class="field"><label for="s_registration_radius_km">Registration radius (km)</label><input id="s_registration_radius_km" data-key="registration_radius_km" type="number"></div>
+                <div class="field"><label for="s_registration_radius_km">Booking radius (km)</label><input id="s_registration_radius_km" data-key="registration_radius_km" type="number"></div>
                 <div class="field"><label for="s_min_driver_age">Minimum driver age</label><input id="s_min_driver_age" data-key="min_driver_age" type="number"></div>
                 <div class="field"><label for="s_required_indemnity">Required indemnity (AUD)</label><input id="s_required_indemnity" data-key="required_indemnity_cents" data-cents type="number"></div>
               </div>

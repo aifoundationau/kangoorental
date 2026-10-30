@@ -2,7 +2,7 @@
       <div class="container legal">
         <p class="eyebrow">Your information</p>
         <h1>Privacy Policy</h1>
-        <p class="updated">Last updated 30 October 2026</p>
+        <p class="updated">Last updated 31 October 2026</p>
 
         <p>{{business_name}}, operated by AI Foundation ("we", "us"), follows the <em>Privacy Act 1988</em> (Cth) and the
           Australian Privacy Principles (APPs). This policy explains what personal information we collect, why, and how we look after it.</p>
@@ -11,8 +11,12 @@
         <ul>
           <li><strong>Identity and contact details:</strong> full name, date of birth, email, mobile number and residential address.</li>
           <li><strong>Driver licence details:</strong> licence number, issuing state, expiry date and class, and the result of our licence check.</li>
-          <li><strong>Location at registration:</strong> your device's coordinates and distance from our depot, collected once with your
-            permission to confirm you live in our service area (within {{radius_km}} km of our {{pickup_label}} depot).</li>
+          <li><strong>Location when you book:</strong> with your permission, your device's location is checked each time you book to confirm you're
+            within {{radius_km}} km of our {{pickup_label}} depot. We keep only the distance with the booking, not your coordinates.
+            (Accounts created before 31 October 2026 also hold the location given at registration.)</li>
+          <li><strong>Location panel:</strong> the bar at the bottom of each page shows your closest suburb, local time, weather and currency,
+            and sets whether you see prices in Australian or US dollars. It uses your approximate location from your internet connection,
+            your device's location if you choose to share it, or a suburb you pick. This is saved in your browser only, not in your account.</li>
           <li><strong>Insurance details:</strong> insurer, policy number, policy expiry and your confirmation of indemnity cover.</li>
           <li><strong>Bookings and payments:</strong> booking times, prices, token purchases and balances. Card details are entered on
             Stripe's secure page and are never seen or stored by us.</li>
@@ -41,6 +45,8 @@
           <li><strong>Google Cloud (Firestore)</strong> stores our customer database in the United States (nam5 multi-region).</li>
           <li><strong>Anthropic</strong> provides the AI model that reads your licence photo. Processing takes place in the United States.</li>
           <li><strong>Stripe</strong> processes token payments (United States and other countries).</li>
+          <li><strong>OpenStreetMap (Nominatim)</strong> and <strong>Open-Meteo</strong> receive location coordinates, rounded to about 100 m and
+            without your name or account details, to look up your suburb and local weather for the location panel.</li>
           <li>Hosting and email providers we use to operate the website.</li>
         </ul>
         <p>We take reasonable steps under APP 8 to make sure these providers protect your information to a standard consistent with the APPs.

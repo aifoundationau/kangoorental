@@ -3,6 +3,14 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+// Load .env here rather than with `node --env-file`: in watch mode that flag also watches the whole project root,
+// and on Windows every node_modules read (last-access-time update) then restarts the server in a loop.
+try {
+  process.loadEnvFile(path.join(ROOT, '.env'));
+} catch (err) {
+  if (err.code !== 'ENOENT') throw err;
+}
+
 // `--emulator` points the app at the local Firestore emulator (npm run emulator) so dev work never touches live data.
 if (process.argv.includes('--emulator')) {
   process.env.FIRESTORE_EMULATOR_HOST ||= '127.0.0.1:8085';
@@ -49,6 +57,10 @@ export const config = {
   licenceAiEnabled: Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) && env.LICENCE_AI !== 'off',
   licenceModel: env.LICENCE_MODEL || 'claude-opus-5-5',
 
+  // "Sign in with Google" (Google Identity Services). The client ID is public; no secret is needed because the
+  // server verifies Google's signed ID token. Add each site origin to the client's Authorised JavaScript origins.
+  googleClientId: env.GOOGLE_OAUTH_CLIENT_ID ?? '614773274800-9pooin0jia9ij91qjlk7r6r6ne02mbhg.apps.googleusercontent.com',
+
   adminEmail: env.ADMIN_EMAIL || '',
   adminPassword: env.ADMIN_PASSWORD || '',
 
@@ -63,9 +75,11 @@ export const config = {
 export const DEFAULT_SETTINGS = {
   business_name: 'Kangoo Rental',
   price_basis: 'aud',                // 'aud' = daily rate fixed in AUD; 'tokens' = daily rate fixed in tokens (USD)
-  daily_rate_aud_cents: '9000',      // AUD $90.00 ex GST per 24 hours (used when price_basis = aud)
-  daily_rate_token_cents: '6294',    // 62.94 tokens ex GST per 24 hours (used when price_basis = tokens)
+  daily_rate_aud_cents: '9000',      // AUD $90 ex GST per 24 hours (used when price_basis = aud)
+  daily_rate_token_cents: '6300',    // 63 tokens ex GST per 24 hours (used when price_basis = tokens)
   gst_rate_bp: '1000',               // 10% GST, in basis points
+  multiday_discount_step_bp: '1000', // each day after the first is another 10% off...
+  multiday_discount_max_bp: '4000',  // ...up to 40% off (day 5), which then applies to every later day
   fx_mode: 'live',                   // 'live' = daily market rate, 'manual' = fx_manual_rate
   fx_manual_rate: '1.4300',          // AUD per USD 1.00
   fx_live_rate: '',

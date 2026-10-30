@@ -7,6 +7,7 @@ import {
   destroyAllSessions, isStaff,
 } from '../security.js';
 import { verifyLicence } from '../licence.js';
+import { verifyGoogleCredential } from '../google.js';
 import {
   str, PATTERNS, AU_STATES, validDate, distanceKm, ageOn, brisbaneToday,
 } from '../util.js';
@@ -47,9 +48,16 @@ export function publicUser(u, extra = {}) {
     policyExpiry: u.policyExpiry,
     indemnityConfirmed: Boolean(u.indemnityConfirmedAt),
     tokenCents: u.tokenCents ?? 0,
+    hasPassword: u.hasPassword ?? Boolean(u.passwordHash),
+    googleLinked: Boolean(u.googleSub),
     createdAt: u.createdAt,
     ...extra,
   };
+}
+
+export async function findUserByGoogleSub(sub) {
+  const qs = await col.users.where('googleSub', '==', sub).limit(1).get();
+  return qs.empty ? null : { id: qs.docs[0].id, ...qs.docs[0].data() };
 }
 
 export const getUser = async (id) => docData(await col.users.doc(String(id)).get());
@@ -61,7 +69,7 @@ export function checkServiceArea(lat, lng, settings) {
     throw new HttpError(400, 'Location is required. Please allow location access in your browser.');
   }
   const km = distanceKm(la, lo, num(settings, 'pickup_lat'), num(settings, 'pickup_lng'));
-  const radius = num(settings, 'registration_radius_km');
+  const radius = num(settings, 'registration_radius_km'); // the booking radius (setting name kept from when it applied to sign-up)
   return { distanceKm: Math.round(km * 10) / 10, radiusKm: radius, inArea: km <= radius };
 }
 
@@ -104,7 +112,7 @@ export async function createUser(fields) {
     if ((await t.get(emailRef)).exists) throw new HttpError(409, 'An account with this email already exists. Please log in.');
     t.create(emailRef, { userId: userRef.id });
     t.create(userRef, {
-      role: 'customer',
+      role: 'supporter',
       licenceStatus: 'unverified',
       tokenCents: 0,
       disabled: false,
@@ -129,9 +137,12 @@ router.post('/auth/register', registerLimiter, licenceUpload.single('licence'), 
   const b = req.body || {};
   const settings = await getSettings();
 
-  const email = str(b.email, { field: 'Email', pattern: PATTERNS.email, max: 120 }).toLowerCase();
+  // Customers signing up with Google use their verified Google email and don't set a password.
+  const google = b.googleCredential ? await verifyGoogleCredential(b.googleCredential) : null;
+  if (google && await findUserByGoogleSub(google.sub)) throw new HttpError(409, 'This Google account is already registered. Please log in.');
+  const email = google ? google.email : str(b.email, { field: 'Email', pattern: PATTERNS.email, max: 120 }).toLowerCase();
   const password = String(b.password || '');
-  if (password.length < 10 || password.length > 200) throw new HttpError(400, 'Password must be at least 10 characters.');
+  if (!google && (password.length < 10 || password.length > 200)) throw new HttpError(400, 'Password must be at least 10 characters.');
   const fullName = str(b.fullName, { field: 'Full name', min: 3, max: 120 });
   const phone = str(b.phone, { field: 'Mobile number', pattern: PATTERNS.phone, max: 20 });
   const dob = validDate(b.dob, 'Date of birth');
@@ -149,26 +160,17 @@ router.post('/auth/register', registerLimiter, licenceUpload.single('licence'), 
   if (ageOn(dob, brisbaneToday()) < minAge) throw new HttpError(400, `Drivers must be at least ${minAge} years old.`);
   if (lic.licenceExpiry < brisbaneToday()) throw new HttpError(400, 'Your licence has expired.');
 
-  const area = checkServiceArea(b.lat, b.lng, settings);
-  if (!area.inArea) {
-    audit(null, 'register.outside_area', `${area.distanceKm} km`, req.ip);
-    throw new HttpError(403, `Registration is only open to people within ${area.radiusKm} km of our ${settings.pickup_label} depot. You appear to be ${area.distanceKm} km away.`);
-  }
   if (!req.file) throw new HttpError(400, 'Please upload a photo of the front of your driver licence.');
 
   const userId = await createUser({
     email,
-    passwordHash: await hashPassword(password),
+    ...(google ? { googleSub: google.sub } : { passwordHash: await hashPassword(password) }),
     fullName, phone, dob, addressLine, suburb, state, postcode,
     ...lic,
-    regLat: Number(b.lat),
-    regLng: Number(b.lng),
-    regAccuracyM: Number(b.accuracy) || null,
-    regDistanceKm: area.distanceKm,
     acceptedTermsAt: nowIso(),
     acceptedAiCheckAt: nowIso(),
   });
-  audit(userId, 'register', email, req.ip);
+  audit(userId, 'register', `${email}${google ? ' (Google)' : ''}`, req.ip);
 
   const result = await runLicenceCheck(userId, req.file, { fullName, dob, ...lic }, req.ip);
   const csrf = await createSession(res, userId);
@@ -183,12 +185,39 @@ router.post('/auth/login', authLimiter, async (req, res) => {
   const ok = user ? await verifyPassword(password, user.passwordHash) : (await hashPassword(password), false);
   if (!ok || user.disabled) {
     audit(user?.id, 'login.failed', email, req.ip);
+    if (user && !user.disabled && !user.passwordHash && user.googleSub) {
+      throw new HttpError(401, 'This account uses Google sign-in. Please use "Sign in with Google".');
+    }
     throw new HttpError(401, 'Email or password is incorrect.');
   }
   if (req.sessionId) await destroySession(req, res);
   const csrf = await createSession(res, user.id);
   audit(user.id, 'login', null, req.ip);
   res.json({ user: publicUser(user), csrf });
+});
+
+// Google sign-in: logs in an existing account (linking Google to it on first use, matched by verified email),
+// or tells the browser to continue to registration with the Google details prefilled.
+router.post('/auth/google', authLimiter, async (req, res) => {
+  const google = await verifyGoogleCredential(req.body?.credential);
+  let user = await findUserByGoogleSub(google.sub);
+  if (!user) {
+    user = await findUserByEmail(google.email);
+    if (user && !user.disabled) {
+      if (user.googleSub && user.googleSub !== google.sub) throw new HttpError(409, 'This email is linked to a different Google account.');
+      await col.users.doc(user.id).update({ googleSub: google.sub });
+      audit(user.id, 'google.link', google.email, req.ip);
+    }
+  }
+  if (!user) return res.json({ needsRegistration: true, profile: { email: google.email, fullName: google.name } });
+  if (user.disabled) {
+    audit(user.id, 'login.failed', `${google.email} (Google, disabled)`, req.ip);
+    throw new HttpError(401, 'This account is disabled. Please contact us.');
+  }
+  if (req.sessionId) await destroySession(req, res);
+  const csrf = await createSession(res, user.id);
+  audit(user.id, 'login', 'Google', req.ip);
+  res.json({ user: publicUser({ ...user, googleSub: google.sub }), csrf });
 });
 
 router.post('/auth/logout', async (req, res) => {
@@ -212,6 +241,7 @@ router.get('/me', async (req, res) => {
 
 router.post('/auth/change-password', requireUser, authLimiter, async (req, res) => {
   const user = await getUser(req.user.id);
+  if (!user.passwordHash) throw new HttpError(400, 'This account signs in with Google, so it has no password to change.');
   if (!(await verifyPassword(String(req.body?.currentPassword || ''), user.passwordHash))) {
     throw new HttpError(400, 'Current password is incorrect.');
   }

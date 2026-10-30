@@ -63,7 +63,11 @@ router.get('/account/transactions', async (req, res) => {
 router.post('/account/delete', async (req, res) => {
   if (isStaff(req.user)) throw new HttpError(403, 'Staff accounts cannot be deleted here.');
   const user = await getUser(req.user.id);
-  if (!(await verifyPassword(String(req.body?.password || ''), user.passwordHash))) throw new HttpError(400, 'Password is incorrect.');
+  if (user.passwordHash) {
+    if (!(await verifyPassword(String(req.body?.password || ''), user.passwordHash))) throw new HttpError(400, 'Password is incorrect.');
+  } else if (req.body?.confirm !== 'DELETE') {
+    throw new HttpError(400, 'Type DELETE to confirm.');
+  }
   const live = allDocs(await col.bookings.where('userId', '==', user.id).get())
     .filter((b) => b.status === 'confirmed' || b.status === 'active');
   if (live.length) throw new HttpError(409, 'Please cancel or complete your current bookings before deleting your account.');
@@ -72,7 +76,7 @@ router.post('/account/delete', async (req, res) => {
   const del = FieldValue.delete();
   const batch = firestore.batch();
   batch.update(col.users.doc(user.id), {
-    email: `deleted-${user.id}@invalid`, passwordHash: 'deleted', fullName: 'Deleted customer', disabled: true,
+    email: `deleted-${user.id}@invalid`, passwordHash: 'deleted', googleSub: del, fullName: 'Deleted customer', disabled: true,
     phone: del, dob: del, addressLine: del, suburb: del, state: del, postcode: del, licenceNumber: del,
     licenceState: del, licenceExpiry: del, licenceClass: del, licenceNotes: del, regLat: del, regLng: del,
     regAccuracyM: del, insurer: del, policyNumber: del, policyExpiry: del, deletedAt: nowIso(),
@@ -92,7 +96,7 @@ router.post('/account/delete', async (req, res) => {
 /* ---------- Tokens ---------- */
 
 router.post('/tokens/checkout', async (req, res) => {
-  if (req.user.role !== 'customer') throw new HttpError(403, 'Only customers can buy tokens.');
+  if (req.user.role !== 'supporter') throw new HttpError(403, 'Only customers can buy tokens.');
   // Whole tokens only, USD $1.00 each.
   const tokens = int(req.body?.tokens, { field: 'Tokens', min: 1, max: 5000 });
 
@@ -148,7 +152,7 @@ router.get('/messages', async (req, res) => {
 router.post('/messages',
   rateLimit({ windowMs: 60 * 1000, max: 10, key: (req) => `u${req.user.id}`, message: 'You are sending messages too quickly.' }),
   async (req, res) => {
-    if (req.user.role !== 'customer') throw new HttpError(403, 'Use the admin inbox to reply to customers.');
+    if (req.user.role !== 'supporter') throw new HttpError(403, 'Use the admin inbox to reply to customers.');
     const body = str(req.body?.body, { field: 'Message', min: 1, max: 2000 });
     await postMessage(req.user, 'customer', body);
     res.status(201).json({ ok: true });

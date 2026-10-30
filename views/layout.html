@@ -8,6 +8,7 @@
   <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/styles.css">
   <script type="module" src="/js/common.js"></script>
+  <script type="module" src="/js/locale.js"></script>
   {{page_script}}
 </head>
 <body>
@@ -53,10 +54,83 @@
         <a href="/terms">Terms of Service</a>
         <a href="/ai-policy">AI Policy (ISO/IEC 42001)</a>
         <a href="/security-policy">Security Policy (ISO/IEC 27001)</a>
+        <a href="/token-policy">Token Policy</a>
       </nav>
       <p class="footer-copy">&copy; 2026 AI Foundation</p>
     </div>
   </footer>
+  <button class="locale-bar" id="localeBar" type="button" aria-haspopup="dialog" aria-controls="localeDialog">
+    <span class="lb-item" id="lbPlace"><span aria-hidden="true">📍</span> Location &amp; settings</span>
+    <span class="lb-item" id="lbWeather" hidden></span>
+    <span class="lb-item" id="lbTime" hidden></span>
+    <span class="lb-item" id="lbMoney" hidden></span>
+    <span class="lb-more" aria-hidden="true">Settings &#9652;</span>
+  </button>
+
+  <dialog class="locale-dialog" id="localeDialog" aria-labelledby="ldTitle" data-tab="here">
+    <div class="ld-inner">
+      <div class="ld-head">
+        <h2 id="ldTitle">Your location &amp; settings</h2>
+        <button class="icon-btn" id="ldClose" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="ld-tabs" role="tablist" aria-label="Location panel">
+        <button type="button" role="tab" id="ldTabHere" aria-controls="ldHere" aria-selected="true" data-ld-tab="here">Here &amp; now</button>
+        <button type="button" role="tab" id="ldTabSettings" aria-controls="ldSettings" aria-selected="false" data-ld-tab="settings">Currency &amp; settings</button>
+      </div>
+      <div class="ld-grid">
+        <section class="ld-panel" id="ldHere" role="tabpanel" aria-labelledby="ldTabHere" data-ld-panel="here">
+          <div class="ld-block">
+            <h3>Closest suburb</h3>
+            <p class="ld-place" id="ldPlace">–</p>
+            <p class="ld-note" id="ldPlaceNote" aria-live="polite"></p>
+            <div class="ld-actions" id="ldActions">
+              <button class="btn btn-small btn-ghost" id="ldGps" type="button">Use my location</button>
+              <button class="btn btn-small btn-ghost" id="ldChange" type="button">Change suburb</button>
+              <button class="link-button" id="ldAuto" type="button" hidden>Use automatic location</button>
+            </div>
+            <form class="ld-search" id="ldSearch" role="search" hidden>
+              <label class="sr-only" for="ldQuery">Suburb or town</label>
+              <div class="ld-search-row">
+                <input id="ldQuery" type="search" placeholder="Suburb or town, e.g. Wishart QLD" autocomplete="off" maxlength="80">
+                <button class="btn btn-small btn-ghost" id="ldSearchCancel" type="button">Cancel</button>
+              </div>
+              <ul class="ld-results" id="ldResults"></ul>
+            </form>
+          </div>
+          <div class="ld-block ld-now" id="ldNow">
+            <div>
+              <h3>Local time</h3>
+              <p class="ld-clock" id="ldClock">--:--</p>
+              <p class="ld-note" id="ldDate"></p>
+              <p class="ld-note" id="ldZone"></p>
+            </div>
+            <div>
+              <h3>Weather</h3>
+              <div id="ldWeather"><p class="ld-note">Loading…</p></div>
+            </div>
+          </div>
+        </section>
+        <section class="ld-panel" id="ldSettings" role="tabpanel" aria-labelledby="ldTabSettings" data-ld-panel="settings">
+          <div class="ld-block">
+            <h3>Currency</h3>
+            <p class="ld-money" id="ldCurrency">–</p>
+            <p class="ld-rate" id="ldRate"></p>
+            <p class="ld-note" id="ldPricing"></p>
+          </div>
+          <div class="ld-block">
+            <h3>Dates &amp; times</h3>
+            <div class="ld-field"><label for="ldDateFmt">Date format</label><select id="ldDateFmt"></select></div>
+            <div class="ld-field"><label for="ldClockFmt">Clock</label><select id="ldClockFmt"></select></div>
+            <div class="ld-field"><label for="ldZoneMode">Show times in</label><select id="ldZoneMode"></select></div>
+            <p class="ld-note" id="ldExample"></p>
+          </div>
+        </section>
+      </div>
+      <p class="ld-credits">Weather by Open-Meteo &middot; places &copy; OpenStreetMap contributors and GeoNames &middot; rates by ExchangeRate-API.
+        We use your location only for this panel; it's saved in this browser, not in your account.</p>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>

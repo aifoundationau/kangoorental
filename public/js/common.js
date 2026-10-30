@@ -1,4 +1,5 @@
 // Shared helpers: API calls with CSRF, session state, formatting and toasts.
+import { getPrefs, displayTimeZone, pricingCurrency, DEPOT_TZ } from './prefs.js';
 
 let csrfToken = '';
 let mePromise = null;
@@ -46,25 +47,106 @@ export const isStaff = (user) => user && (user.role === 'admin' || user.role ===
 
 /* ---------- Formatting ---------- */
 
-const aud = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
-export const formatAud = (cents) => `A${aud.format(cents / 100)}`;
-export const formatUsd = (cents) => `US$${(cents / 100).toFixed(2)}`;
-export const formatTokens = (tokenCents) => (tokenCents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Every dollar and token amount is shown as a whole number, rounded up. Exchange rates keep their decimals.
+const whole = (cents) => Math.ceil(cents / 100 - 1e-9) || 0; // `|| 0` turns -0 into 0
+export const formatAud = (cents) => `A$${whole(cents).toLocaleString('en-AU')}`;
+export const formatUsd = (cents) => `US$${whole(cents).toLocaleString('en-US')}`;
+export const formatTokens = (tokenCents) => whole(tokenCents).toLocaleString('en-AU');
 export const formatRate = (rate) => Number(rate).toFixed(4);
 
-const TZ = 'Australia/Brisbane';
-export const formatDateTime = (ms) => new Date(ms).toLocaleString('en-AU', {
-  timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+/** A price in the visitor's pricing currency: AUD in Australia and New Zealand, USD everywhere else. */
+export const formatPrice = ({ aud: audCents, usd: usdCents }) => (pricingCurrency() === 'AUD' ? formatAud(audCents) : formatUsd(usdCents));
+
+/** A quote's amounts in both currencies. The USD amounts are the token amounts, since 1 token = US$1. */
+export const quotePrices = (q) => ({
+  list: { aud: q.listSubtotalCents, usd: q.listSubtotalTokenCents },
+  discount: { aud: q.discountCents, usd: q.listSubtotalTokenCents - q.subtotalTokenCents },
+  subtotal: { aud: q.subtotalCents, usd: q.subtotalTokenCents },
+  gst: { aud: q.gstCents, usd: q.tokenCents - q.subtotalTokenCents },
+  total: { aud: q.totalCents, usd: q.tokenCents },
 });
-export const formatDate = (isoDate) => new Date(`${isoDate}T00:00:00+10:00`).toLocaleDateString('en-AU', {
-  timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric',
-});
-export const formatStamp = (iso) => (iso ? new Date(iso).toLocaleString('en-AU', {
-  timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
-}) : '');
+
+// Dates and times follow the visitor's settings in the location panel (date order, 12/24-hour clock, time zone).
+const DATE_LOCALES = { dmy: 'en-AU', mdy: 'en-US', ymd: 'en-CA' };
+
+function formatWhen(date, options, timeZone = displayTimeZone(), { nameZone = true } = {}) {
+  const { dateFormat, clock, localTz } = getPrefs();
+  const o = { timeZone, ...options };
+  if (o.hour) {
+    o.hour12 = clock === '12';
+    // Name the zone whenever the visitor might read it as a different one from the times shown.
+    if (nameZone && (timeZone !== DEPOT_TZ || localTz !== DEPOT_TZ)) o.timeZoneName = 'short';
+  }
+  if (dateFormat === 'ymd' && o.day) Object.assign(o, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  return new Date(date).toLocaleString(DATE_LOCALES[dateFormat] || 'en-AU', o);
+}
+
+export const formatDateTime = (ms) => formatWhen(ms, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+/** A Brisbane calendar date such as a booking day ("2026-10-31"); never shifted into another time zone. */
+export const formatDate = (isoDate) => formatWhen(`${isoDate}T12:00:00+10:00`, { day: 'numeric', month: 'short', year: 'numeric' }, DEPOT_TZ);
+export const formatStamp = (iso) => (iso ? formatWhen(iso, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+export const formatLongDate = (ms, timeZone) => formatWhen(ms, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }, timeZone);
+export const formatTime = (ms, timeZone, { seconds = false } = {}) => formatWhen(ms, {
+  hour: 'numeric', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}),
+}, timeZone, { nameZone: false });
+
+export const weatherIcon = (code) => (code === 0 ? '☀️' : code <= 2 ? '⛅' : code === 3 ? '☁️' : code <= 48 ? '🌫️'
+  : code <= 67 ? '🌧️' : code <= 77 ? '🌨️' : code <= 82 ? '🌦️' : code <= 86 ? '🌨️' : '⛈️');
 
 export function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ---------- Sign in with Google ---------- */
+
+let gsiLoading = null;
+function loadGoogleScript() {
+  gsiLoading ||= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return gsiLoading;
+}
+
+/** Renders Google's button into `el` and calls onCredential(idToken) after sign-in. Returns false if unavailable. */
+export async function renderGoogleButton(el, onCredential, text = 'continue_with') {
+  const cfg = await getConfig().catch(() => null);
+  if (!el || !cfg?.googleClientId) return false;
+  try {
+    await loadGoogleScript();
+  } catch {
+    return false;
+  }
+  window.google.accounts.id.initialize({
+    client_id: cfg.googleClientId,
+    callback: (response) => onCredential(response.credential),
+    ux_mode: 'popup',
+    auto_select: false,
+  });
+  window.google.accounts.id.renderButton(el, {
+    theme: 'outline', size: 'large', text, shape: 'rectangular', logo_alignment: 'center',
+    width: Math.min(400, Math.max(240, el.clientWidth || 320)),
+  });
+  el.closest('[data-google]')?.removeAttribute('hidden');
+  return true;
+}
+
+/** The device's current location, { lat, lng, accuracy }, or an Error with a message to show the visitor. */
+export function getDeviceLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("Your browser can't share its location, so we can't check you're within our booking area. Please message us."));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) }),
+      (err) => reject(new Error(err.code === 1
+        ? 'Location permission was denied. Allow location for this site in your browser settings, then try again.'
+        : "We couldn't get your location. Please try again.")),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  });
 }
 
 /** Downscales a photo in the browser (longest side 1600px, JPEG) so uploads stay small. Falls back to the original. */

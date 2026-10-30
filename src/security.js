@@ -90,6 +90,7 @@ export async function loadSession(req, res, next) {
     if (user && !user.disabled) {
       req.sessionId = id;
       req.csrf = csrf;
+      user.hasPassword = Boolean(user.passwordHash);
       delete user.passwordHash;
       req.user = user;
     } else {
@@ -168,13 +169,14 @@ setInterval(() => {
 
 export function securityHeaders(req, res, next) {
   res.set({
+    // accounts.google.com/gsi entries are for the "Sign in with Google" button.
     'Content-Security-Policy': [
       "default-src 'self'",
-      "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self' https://accounts.google.com/gsi/client",
+      "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
       "img-src 'self' data:",
-      "frame-src https://www.openstreetmap.org",
-      "connect-src 'self'",
+      "frame-src https://www.openstreetmap.org https://accounts.google.com/gsi/",
+      "connect-src 'self' https://accounts.google.com/gsi/",
       "form-action 'self' https://checkout.stripe.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
@@ -183,7 +185,8 @@ export function securityHeaders(req, res, next) {
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Permissions-Policy': 'geolocation=(self), camera=(self), microphone=()',
-    'Cross-Origin-Opener-Policy': 'same-origin',
+    // Google's sign-in popup needs to report back to this window.
+    'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     'X-Frame-Options': 'DENY',
   });
   if (config.isProduction) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');

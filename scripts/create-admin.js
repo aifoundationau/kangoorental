@@ -18,8 +18,8 @@ const passwordHash = await hashPassword(password);
 const existing = await findUserByEmail(email);
 
 if (existing) {
-  if (existing.role === 'customer') {
-    console.error('That email belongs to a customer account. Use a different email for staff.');
+  if (existing.role === 'supporter') {
+    console.error('That email belongs to a supporter account. Use a different email for staff.');
     process.exit(1);
   }
   await col.users.doc(existing.id).update({ passwordHash, role, disabled: false });

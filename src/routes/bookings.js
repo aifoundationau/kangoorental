@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { firestore, col, allDocs, nowIso, getSettings, num, audit, FieldValue } from '../db.js';
 import { HttpError, requireUser } from '../security.js';
 import { paymentsMode } from '../payments.js';
+import { checkServiceArea } from './auth.js';
 import { currentRate } from '../fx.js';
 import { config } from '../config.js';
 import {
@@ -22,9 +23,10 @@ export function publicConfig(settings) {
     gstRateBp: num(settings, 'gst_rate_bp'),
     fx,
     dailyQuote: quote(settings, 1, fx.rate),
+    multidayDiscount: { stepBp: num(settings, 'multiday_discount_step_bp'), maxBp: num(settings, 'multiday_discount_max_bp') },
     tokenPacks: settings.token_packs.split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0),
     minDriverAge: num(settings, 'min_driver_age'),
-    registrationRadiusKm: num(settings, 'registration_radius_km'),
+    bookingRadiusKm: num(settings, 'registration_radius_km'),
     pickup: { label: settings.pickup_label, lat: num(settings, 'pickup_lat'), lng: num(settings, 'pickup_lng') },
     cancellationHours: num(settings, 'cancellation_hours'),
     bufferHours: num(settings, 'buffer_hours'),
@@ -39,6 +41,7 @@ export function publicConfig(settings) {
     announcement: settings.announcement,
     paymentsMode,
     licenceAi: config.licenceAiEnabled,
+    googleClientId: config.googleClientId,
     today: brisbaneToday(),
   };
 }
@@ -110,7 +113,7 @@ function bookingBlockers(user, endAtMs) {
 }
 
 router.post('/bookings', requireUser, async (req, res) => {
-  if (req.user.role !== 'customer') throw new HttpError(403, 'Staff accounts cannot make bookings.');
+  if (req.user.role !== 'supporter') throw new HttpError(403, 'Staff accounts cannot make bookings.');
   const settings = await getSettings();
   const b = req.body || {};
   const date = validDate(b.date, 'Pickup date');
@@ -118,6 +121,12 @@ router.post('/bookings', requireUser, async (req, res) => {
   const days = int(b.days, { field: 'Number of days', min: 1, max: num(settings, 'max_rental_days') });
   const note = str(b.note, { field: 'Note', required: false, max: 500 });
   if (b.acceptDisclaimer !== true) throw new HttpError(400, 'You must accept the rental disclaimer and insurance requirements.');
+  // Anyone can register, but bookings are only for people near the depot: the browser sends its location with every booking.
+  const area = checkServiceArea(b.lat, b.lng, settings);
+  if (!area.inArea) {
+    audit(req.user.id, 'booking.outside_area', `${area.distanceKm} km`, req.ip);
+    throw new HttpError(403, `Bookings are only open to people within ${area.radiusKm} km of our ${settings.pickup_label} depot. You appear to be ${area.distanceKm} km away.`);
+  }
 
   const hour = Number(time.slice(0, 2));
   if (hour < num(settings, 'first_pickup_hour') || hour > num(settings, 'last_pickup_hour')) {
@@ -154,7 +163,7 @@ router.post('/bookings', requireUser, async (req, res) => {
       throw new HttpError(409, 'Sorry, the van is not available for that time. Please choose another slot.');
     }
     if ((user.tokenCents || 0) < q.tokenCents) {
-      throw new HttpError(402, `You need ${(q.tokenCents / 100).toFixed(2)} tokens for this booking but have ${((user.tokenCents || 0) / 100).toFixed(2)}. Please buy more tokens.`);
+      throw new HttpError(402, `You need ${q.tokenCents / 100} tokens for this booking but have ${Math.floor((user.tokenCents || 0) / 100)}. Please buy more tokens.`);
     }
 
     t.set(CALENDAR_LOCK, { updatedAt: nowIso() });
@@ -170,6 +179,9 @@ router.post('/bookings', requireUser, async (req, res) => {
       priceBasis: q.priceBasis,
       fxRate: q.fxRate,
       gstRateBp: q.gstRateBp,
+      bookedFromKm: area.distanceKm,
+      listSubtotalCents: q.listSubtotalCents,
+      discountCents: q.discountCents,
       subtotalCents: q.subtotalCents,
       gstCents: q.gstCents,
       totalCents: q.totalCents,

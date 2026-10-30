@@ -2,18 +2,17 @@
       <div class="container medium">
         <form class="card form-card" id="registerForm" novalidate>
           <h1>Create your account</h1>
-          <p class="lead-sm">Registration is open to people within <strong>{{radius_km}} km</strong> of our {{pickup_label}} depot.
-            Drivers must be at least {{min_age}} with a current, full Australian driver licence.</p>
+          <p class="lead-sm">Anyone can register as a supporter. To book the van you need to be within <strong>{{radius_km}} km</strong>
+            of our {{pickup_label}} depot when you book, and at least {{min_age}} with a current, full Australian driver licence.</p>
 
-          <fieldset class="geo-step" id="geoStep">
-            <legend>1. Confirm you're in our area</legend>
-            <p class="hint">We use your device's location once, to check you're near Brisbane. We store the distance and coordinates with your account.</p>
-            <button class="btn btn-ghost" type="button" id="geoBtn">Share my location</button>
-            <p class="geo-status" id="geoStatus" aria-live="polite"></p>
-          </fieldset>
+          <div class="google-block" data-google hidden>
+            <div id="googleBtn" class="google-btn"></div>
+            <p class="divider"><span>or sign up with email</span></p>
+          </div>
+          <p class="google-linked" id="googleLinked" hidden></p>
 
-          <fieldset id="detailsStep" disabled>
-            <legend>2. Your details</legend>
+          <fieldset id="detailsStep">
+            <legend>1. Your details</legend>
             <div class="field">
               <label for="fullName">Full name (exactly as on your licence)</label>
               <input id="fullName" name="fullName" autocomplete="name" required maxlength="120">
@@ -61,8 +60,8 @@
             </div>
           </fieldset>
 
-          <fieldset id="licenceStep" disabled>
-            <legend>3. Driver licence</legend>
+          <fieldset id="licenceStep">
+            <legend>2. Driver licence</legend>
             <div class="field-row three">
               <div class="field">
                 <label for="licenceNumber">Licence number</label>
@@ -100,7 +99,7 @@
           </fieldset>
 
           <p class="form-error" id="regError" role="alert" hidden></p>
-          <button class="btn btn-block" type="submit" id="regBtn" disabled>Create account</button>
+          <button class="btn btn-block" type="submit" id="regBtn">Create account</button>
           <p class="center hint">Already registered? <a href="/login">Log in</a></p>
         </form>
       </div>

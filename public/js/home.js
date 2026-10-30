@@ -1,7 +1,8 @@
 import {
-  api, getMe, getConfig, isStaff, formatAud, formatTokens, formatRate, formatDateTime, toast, showError, setBusy,
-  escapeHtml, ApiError,
+  api, getMe, getConfig, isStaff, formatAud, formatPrice, quotePrices, formatTokens, formatRate, formatDateTime, formatTime,
+  formatLongDate, weatherIcon, getDeviceLocation, toast, showError, setBusy, escapeHtml, ApiError,
 } from './common.js';
+import { pricingCurrency, DEPOT_TZ } from './prefs.js';
 
 const DAY = 86400000;
 const PENDING_KEY = 'kangoo.pendingBooking';
@@ -18,6 +19,7 @@ const state = {
   time: '',
   days: 1,
   quote: null,
+  area: null, // last "Check my location" result; the server checks again with every booking
 };
 
 /* ---------- Brisbane date helpers (always UTC+10) ---------- */
@@ -25,7 +27,7 @@ const state = {
 const brisbaneMs = (date, time = '00:00') => Date.parse(`${date}T${time}:00+10:00`);
 const isoDate = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
-const hourLabel = (h) => new Date(Date.UTC(2000, 0, 1, h)).toLocaleTimeString('en-AU', { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' });
+const hourLabel = (h) => formatTime(Date.UTC(2000, 0, 1, h), 'UTC');
 
 function slotOk(date, hour, days) {
   const start = brisbaneMs(date, `${String(hour).padStart(2, '0')}:00`);
@@ -129,21 +131,39 @@ function renderReturn() {
 function renderQuote() {
   const q = state.quote;
   if (!q) return;
-  $('qSubtotal').textContent = formatAud(q.subtotalCents);
-  $('qGst').textContent = formatAud(q.gstCents);
-  $('qTotal').textContent = formatAud(q.totalCents);
+  const p = quotePrices(q);
+  const discounted = q.discountCents > 0;
+  $('qListRow').hidden = !discounted;
+  $('qDiscountRow').hidden = !discounted;
+  $('qListLabel').textContent = `Rental, ${q.days} × 24 hours`;
+  $('qList').textContent = formatPrice(p.list);
+  $('qDiscount').textContent = `−${formatPrice(p.discount)}`;
+  $('qSubtotal').textContent = formatPrice(p.subtotal);
+  $('qGst').textContent = formatPrice(p.gst);
+  $('qTotalLabel').textContent = `Total (${pricingCurrency()})`;
+  $('qTotal').textContent = formatPrice(p.total);
   $('qTokens').textContent = `${formatTokens(q.tokenCents)} tokens`;
-  $('qRate').textContent = `Converted at US$1.00 = A$${formatRate(q.fxRate)}. 1 token = US$1.00.`;
+  $('qRate').textContent = pricingCurrency() === 'AUD'
+    ? `Converted at today's exchange rate, US$1 = A$${formatRate(q.fxRate)}. Amounts are rounded up to whole dollars and tokens.`
+    : '1 token = US$1. Amounts are rounded up to whole dollars and tokens.';
 }
 
 function renderPricing() {
   const { cfg } = state;
   const q = cfg.dailyQuote;
-  const rate = formatRate(cfg.fx.rate);
-  $('heroPrice').innerHTML = `<span class="price-main">${formatAud(q.subtotalCents)}</span><span class="price-sub">+ GST per 24 hours &middot; ${formatTokens(q.tokenCents)} tokens</span>`;
-  $('pxAud').textContent = formatAud(q.totalCents);
+  const p = quotePrices(q);
+  $('heroPrice').innerHTML = `<span class="price-main">${formatPrice(p.subtotal)}</span><span class="price-sub">+ GST per 24 hours &middot; ${formatTokens(q.tokenCents)} tokens</span>`;
+  $('pxPrice').textContent = formatPrice(p.total);
   $('pxTokens').textContent = formatTokens(q.tokenCents);
-  $('pxRate').textContent = `today US$1 = A$${rate}`;
+  const aud = pricingCurrency() === 'AUD';
+  $('pxToken').textContent = aud ? `100 tokens ≈ ${formatAud(cfg.fx.rate * 10000)}` : '1 token = US$1';
+  $('pxRate').textContent = aud ? "at today's exchange rate" : 'prepaid credit for hire';
+  const { stepBp, maxBp } = cfg.multidayDiscount;
+  const steps = [];
+  for (let bp = stepBp, day = 2; stepBp > 0 && bp <= maxBp; bp += stepBp, day++) steps.push(`${bp / 100}% off day ${day}`);
+  $('pxDiscount').hidden = !steps.length;
+  if (steps.length) steps[steps.length - 1] += ' onwards';
+  $('pxDiscount').textContent = `Longer hire saves: ${steps.slice(0, -1).join(', ')}${steps.length > 1 ? ' and ' : ''}${steps.at(-1) || ''}.`;
 }
 
 function renderDaysSelect() {
@@ -177,6 +197,11 @@ function renderAuthPanel() {
   box.hidden = false;
   submit.textContent = 'Confirm booking';
   const items = [];
+  const radius = state.cfg.bookingRadiusKm;
+  items.push(state.area?.inArea
+    ? `<li class="ok">Within ${radius} km of our depot (you're ${state.area.distanceKm} km away)</li>`
+    : `<li class="todo">Within ${radius} km of our depot${state.area ? `: you appear to be ${state.area.distanceKm} km away` : ''}
+        &middot; <button class="link-button" type="button" id="bkCheckLocation">Check my location</button></li>`);
   const licenceOk = me.licenceStatus === 'verified';
   items.push(`<li class="${licenceOk ? 'ok' : 'todo'}">Driver licence ${licenceOk ? 'verified' : `<a href="/account#licence">${me.licenceStatus === 'pending' ? 'awaiting review' : 'needs verifying'}</a>`}</li>`);
   const insOk = me.insurer && me.indemnityConfirmed && me.policyExpiry;
@@ -188,6 +213,17 @@ function renderAuthPanel() {
 }
 
 /* ---------- Events ---------- */
+
+async function checkLocation() {
+  showError($('bkError'), null);
+  try {
+    const { lat, lng } = await getDeviceLocation();
+    state.area = await api('/geo/check', { method: 'POST', body: { lat, lng } });
+  } catch (err) {
+    showError($('bkError'), err);
+  }
+  renderAuthPanel();
+}
 
 async function changeMonth(delta) {
   let { y, m } = state.month;
@@ -226,11 +262,23 @@ async function submitBooking(e) {
   if (!$('bkDisclaimer').checked) return showError(errEl, new Error('Please accept the rental disclaimer and insurance requirements.'));
 
   const btn = $('bkSubmit');
+  setBusy(btn, true, 'Checking your location…');
+  let here;
+  try {
+    here = await getDeviceLocation();
+  } catch (err) {
+    setBusy(btn, false);
+    return showError(errEl, err);
+  }
+  setBusy(btn, false);
   setBusy(btn, true, 'Booking…');
   try {
     const { booking } = await api('/bookings', {
       method: 'POST',
-      body: { date: state.date, time: state.time, days: state.days, acceptDisclaimer: true, note: $('bkNote').value },
+      body: {
+        date: state.date, time: state.time, days: state.days, acceptDisclaimer: true, note: $('bkNote').value,
+        lat: here.lat, lng: here.lng,
+      },
     });
     sessionStorage.removeItem(PENDING_KEY);
     toast(`Booked! Reference ${booking.ref}`, 'success');
@@ -249,15 +297,13 @@ async function submitBooking(e) {
 
 /* ---------- Location, Weather & Time Hub ---------- */
 
-const WEATHER_ICON = (code) => (code === 0 ? '☀️' : code <= 2 ? '⛅' : code === 3 ? '☁️' : code <= 48 ? '🌫️' : code <= 67 ? '🌧️' : code <= 82 ? '🌦️' : '⛈️');
-
 function startClock() {
   const clock = $('hubClock');
   const dateEl = $('hubDate');
   const tick = () => {
     const now = new Date();
-    clock.textContent = now.toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: 'numeric', minute: '2-digit', second: '2-digit' });
-    dateEl.textContent = now.toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    clock.textContent = formatTime(now, DEPOT_TZ, { seconds: true });
+    dateEl.textContent = formatLongDate(now, DEPOT_TZ);
   };
   tick();
   setInterval(tick, 1000);
@@ -277,7 +323,7 @@ async function loadHub() {
     $('hubMap').replaceChildren(frame);
     $('hubDirections').href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-    $('hubFx').textContent = `US$1.00 = A$${formatRate(hub.fx.rate)}`;
+    $('hubFx').textContent = `US$1 = A$${formatRate(hub.fx.rate)}`;
     $('hubFxSource').textContent = hub.fx.mode === 'live'
       ? `Market rate from ${hub.fx.source}${hub.fx.date ? `, ${hub.fx.date}` : ''}.`
       : hub.fx.source;
@@ -290,14 +336,14 @@ async function loadHub() {
     const c = w.current;
     const days = w.daily.map((day) => `
       <li><span class="wx-day">${new Date(`${day.date}T12:00:00+10:00`).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'short' })}</span>
-        <span class="wx-icon" aria-hidden="true">${WEATHER_ICON(day.code)}</span>
+        <span class="wx-icon" aria-hidden="true">${weatherIcon(day.code)}</span>
         <span>${Math.round(day.min)}°–${Math.round(day.max)}°</span>
         <span class="wx-rain">${day.rainChance ?? 0}% rain</span></li>`).join('');
     const today = w.daily[0];
-    const t = (iso) => new Date(`${iso}:00+10:00`).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: 'numeric', minute: '2-digit' });
+    const t = (iso) => formatTime(Date.parse(`${iso}:00+10:00`), DEPOT_TZ);
     $('hubWeather').innerHTML = `
       <div class="wx-now">
-        <span class="wx-big" aria-hidden="true">${WEATHER_ICON(c.code)}</span>
+        <span class="wx-big" aria-hidden="true">${weatherIcon(c.code)}</span>
         <div><p class="big-figure">${Math.round(c.temperature)}°C</p>
           <p>${escapeHtml(c.summary)} &middot; feels like ${Math.round(c.feelsLike)}°</p></div>
       </div>
@@ -322,7 +368,7 @@ function locateMe() {
       const r = await api('/geo/check', { method: 'POST', body: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
       out.textContent = r.inArea
         ? `You're about ${r.distanceKm} km from the depot, inside our ${r.radiusKm} km service area.`
-        : `You're about ${r.distanceKm} km away. Registration is open to people within ${r.radiusKm} km of the depot.`;
+        : `You're about ${r.distanceKm} km away. Bookings are open to people within ${r.radiusKm} km of the depot.`;
     } catch (err) {
       out.textContent = err.message;
     }
@@ -376,6 +422,13 @@ async function init() {
     renderAuthPanel();
   });
   $('bookingForm').addEventListener('submit', submitBooking);
+  $('checklist').addEventListener('click', (e) => { if (e.target.id === 'bkCheckLocation') checkLocation(); });
+  window.addEventListener('kangoo:prefs', () => {
+    renderPricing();
+    renderQuote();
+    renderTimes();
+    loadHub();
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

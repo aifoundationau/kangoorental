@@ -15,3 +15,6 @@ Thumbs.db
 
 .vercel
 .env*
+
+# Never commit (house rule)
+safetyprotocols.txt

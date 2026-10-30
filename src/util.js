@@ -33,36 +33,57 @@ export function ageOn(dobStr, onDateStr) {
   return ty - y - (tm < m || (tm === m && td < d) ? 1 : 0);
 }
 
+/** Rounds up to a whole number, ignoring floating-point dust (e.g. 100.00000000000001 stays 100). */
+export const ceilWhole = (n) => Math.ceil(n - 1e-9) || 0; // `|| 0` turns -0 into 0
+
 /**
- * Prices a rental. Tokens are USD $1.00 each; `fxRate` is AUD per USD 1.00.
+ * Prices a rental. Tokens are US$1 each; `fxRate` is AUD per US$1.
  * basis 'aud':    AUD rate is fixed  -> tokens = AUD / rate
  * basis 'tokens': token rate is fixed -> AUD = tokens x rate
+ * Multi-day discount: day 2 is 10% off, day 3 20%, day 4 30%, and day 5 onwards 40% (see the multiday_discount_* settings).
  * GST is added on the AUD amount, and the customer is charged the GST-inclusive total in tokens.
+ * Every dollar and token amount is a whole number, rounded up. Amounts are returned in cents to match stored records.
  */
 export function quote(settings, days, fxRate) {
   const basis = settings.price_basis === 'tokens' ? 'tokens' : 'aud';
   const gstBp = num(settings, 'gst_rate_bp');
+  const stepBp = num(settings, 'multiday_discount_step_bp');
+  const maxBp = num(settings, 'multiday_discount_max_bp');
+  const discounted = (dailyRate) => Array.from({ length: days }, (_, i) => ceilWhole((dailyRate * (10000 - Math.min(i * stepBp, maxBp))) / 10000))
+    .reduce((a, b) => a + b, 0);
+
+  let listAud;
   let subtotalAud;
-  let subtotalTokenCents;
+  let listTokens;
+  let subtotalTokens;
   if (basis === 'aud') {
-    subtotalAud = num(settings, 'daily_rate_aud_cents') * days;
-    subtotalTokenCents = Math.round(subtotalAud / fxRate);
+    const daily = ceilWhole(num(settings, 'daily_rate_aud_cents') / 100);
+    listAud = daily * days;
+    subtotalAud = discounted(daily);
+    listTokens = ceilWhole(listAud / fxRate);
+    subtotalTokens = ceilWhole(subtotalAud / fxRate);
   } else {
-    subtotalTokenCents = num(settings, 'daily_rate_token_cents') * days;
-    subtotalAud = Math.round(subtotalTokenCents * fxRate);
+    const daily = ceilWhole(num(settings, 'daily_rate_token_cents') / 100);
+    listTokens = daily * days;
+    subtotalTokens = discounted(daily);
+    listAud = ceilWhole(listTokens * fxRate);
+    subtotalAud = ceilWhole(subtotalTokens * fxRate);
   }
-  const gstAud = Math.round((subtotalAud * gstBp) / 10000);
+  const gstAud = ceilWhole((subtotalAud * gstBp) / 10000);
   const totalAud = subtotalAud + gstAud;
   return {
     days,
     priceBasis: basis,
     fxRate,
     gstRateBp: gstBp,
-    subtotalCents: subtotalAud,
-    gstCents: gstAud,
-    totalCents: totalAud,
-    subtotalTokenCents,
-    tokenCents: Math.round(totalAud / fxRate),
+    listSubtotalCents: listAud * 100,
+    discountCents: (listAud - subtotalAud) * 100,
+    subtotalCents: subtotalAud * 100,
+    gstCents: gstAud * 100,
+    totalCents: totalAud * 100,
+    listSubtotalTokenCents: listTokens * 100,
+    subtotalTokenCents: subtotalTokens * 100,
+    tokenCents: ceilWhole(totalAud / fxRate) * 100,
   };
 }
 

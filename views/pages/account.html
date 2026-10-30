@@ -40,7 +40,7 @@
 
           <div class="tab-panel" data-panel="tokens" role="tabpanel" hidden>
             <h2>Buy tokens</h2>
-            <p>1 token = <strong>US$1.00</strong>. Rental prices are set in Australian dollars and converted at the current exchange rate
+            <p>1 token = <strong>US$1</strong>. Rental prices are set in Australian dollars and converted at the current exchange rate
               (<span id="tokRate">–</span>). One 24-hour rental is currently <strong id="tokDay">–</strong>.</p>
             <div class="packs" id="packs"></div>
             <form class="inline-form" id="customTokens">
@@ -162,6 +162,7 @@
             </form>
             <p class="hint">To change your name, date of birth or email, please message us.</p>
 
+            <div id="passwordSection">
             <h2 class="mt">Change password</h2>
             <form id="passwordForm" class="stack narrow-form">
               <div class="field">
@@ -174,11 +175,12 @@
               </div>
               <button class="btn btn-ghost" type="submit">Update password</button>
             </form>
+            </div>
 
             <h2 class="mt">Delete account</h2>
             <p class="hint">We remove your personal details. Booking and payment records are kept as required by tax law. If you have unused tokens, message us before deleting your account.</p>
             <form id="deleteForm" class="inline-form">
-              <label for="delPw">Password</label>
+              <label for="delPw" id="delPwLabel">Password</label>
               <input id="delPw" type="password" autocomplete="current-password" required>
               <button class="btn btn-danger" type="submit">Delete my account</button>
             </form>

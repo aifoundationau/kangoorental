@@ -74,10 +74,10 @@ await step('public config exposes AUD price, tokens and exchange rate', async ()
 });
 
 await step('every page renders with the AI Foundation footer', async () => {
-  for (const p of ['/', '/login', '/register', '/rental-disclaimer', '/founder-welcome', '/privacy', '/terms', '/ai-policy', '/security-policy']) {
+  for (const p of ['/', '/login', '/register', '/rental-disclaimer', '/founder-welcome', '/privacy', '/terms', '/ai-policy', '/security-policy', '/token-policy']) {
     const { status, data } = await customer.req(p);
     assert.equal(status, 200, p);
-    for (const text of ['2026 AI Foundation', 'Founder Welcome', 'Privacy Policy', 'Terms of Service', 'AI Policy (ISO/IEC 42001)', 'Security Policy (ISO/IEC 27001)']) {
+    for (const text of ['2026 AI Foundation', 'Founder Welcome', 'Privacy Policy', 'Terms of Service', 'AI Policy (ISO/IEC 42001)', 'Security Policy (ISO/IEC 27001)', 'Token Policy']) {
       assert.ok(data.includes(text), `${p} missing "${text}"`);
     }
     assert.ok(!/\{\{\w+\}\}/.test(data), `${p} has an unfilled placeholder`);
@@ -89,14 +89,17 @@ await step('account and admin pages require login', async () => {
   assert.equal((await customer.req('/admin', { redirect: 'manual' })).status, 302);
 });
 
-await step('registration outside Brisbane is refused', async () => {
-  const { status } = await customer.api('/auth/register', { method: 'POST', form: registrationForm(email, SYDNEY) });
-  assert.equal(status, 403);
+await step('anyone can register as a supporter, wherever they are', async () => {
+  const far = new Client();
+  const { status, data } = await far.api('/auth/register', { method: 'POST', form: registrationForm(`far-${Date.now()}@example.com`, SYDNEY) });
+  assert.equal(status, 201, JSON.stringify(data));
+  assert.equal(data.user.role, 'supporter');
 });
 
-await step('registration inside Brisbane succeeds; licence image not stored', async () => {
+await step('registration inside Brisbane succeeds as a supporter; licence image not stored', async () => {
   const { status, data } = await customer.api('/auth/register', { method: 'POST', form: registrationForm(email) });
   assert.equal(status, 201, JSON.stringify(data));
+  assert.equal(data.user.role, 'supporter');
   customerId = data.user.id;
   assert.ok(['pending', 'verified', 'rejected'].includes(data.licence.status));
   assert.equal(JSON.stringify(data).includes(PNG.toString('base64')), false);
@@ -105,6 +108,18 @@ await step('registration inside Brisbane succeeds; licence image not stored', as
 await step('duplicate email is rejected', async () => {
   const other = new Client();
   assert.equal((await other.api('/auth/register', { method: 'POST', form: registrationForm(email) })).status, 409);
+});
+
+await step('Google sign-in is offered and forged Google tokens are rejected', async () => {
+  const { data: cfg } = await customer.api('/config');
+  assert.ok(cfg.googleClientId.endsWith('.apps.googleusercontent.com'));
+  const fake = 'eyJhbGciOiJSUzI1NiJ9.' + 'x'.repeat(200) + '.sig';
+  const anon = new Client();
+  assert.equal((await anon.api('/auth/google', { method: 'POST', body: { credential: fake } })).status, 401);
+  const { status } = await anon.api('/auth/register', {
+    method: 'POST', form: registrationForm(`g-${Date.now()}@example.com`, BRISBANE, { googleCredential: fake, password: '' }),
+  });
+  assert.equal(status, 401);
 });
 
 await step('requests without the CSRF token are refused', async () => {
@@ -122,27 +137,43 @@ await step('superadmin logs in and sets a fixed manual exchange rate', async () 
   assert.equal(data.fx.rate, 1.43);
 });
 
-await step('AUD basis: A$90 + GST at 1.43 = A$99.00 = 69.23 tokens', async () => {
+await step('AUD basis: A$90 + GST at 1.43 = A$99 = 70 tokens (69.23 rounded up)', async () => {
   const { data: q } = await customer.api('/quote?days=1');
   assert.equal(q.subtotalCents, 9000);
-  assert.equal(q.subtotalTokenCents, 6294); // A$90 / 1.43 = 62.94 tokens ex GST
+  assert.equal(q.subtotalTokenCents, 6300); // A$90 / 1.43 = 62.94 -> 63 tokens ex GST
   assert.equal(q.gstCents, 900);
   assert.equal(q.totalCents, 9900);
-  assert.equal(q.tokenCents, 6923); // A$99 / 1.43 = 69.23 tokens
+  assert.equal(q.tokenCents, 7000); // A$99 / 1.43 = 69.23 -> 70 tokens
+  assert.equal(q.discountCents, 0);
 });
 
-await step('token basis: 62 tokens -> US$62 x 1.43 = A$88.66 + GST = A$97.53 = 68.20 tokens', async () => {
+await step('multi-day discount: 10/20/30/40% off days 2-5, day-5 price after that; whole amounts rounded up', async () => {
+  const two = (await customer.api('/quote?days=2')).data; // 90 + 81 = 171, GST 17.10 -> 18
+  assert.deepEqual([two.listSubtotalCents, two.discountCents, two.subtotalCents, two.gstCents, two.totalCents, two.tokenCents], [18000, 900, 17100, 1800, 18900, 13300]);
+  const five = (await customer.api('/quote?days=5')).data; // 90 + 81 + 72 + 63 + 54 = 360
+  assert.deepEqual([five.listSubtotalCents, five.discountCents, five.subtotalCents, five.gstCents, five.totalCents, five.tokenCents], [45000, 9000, 36000, 3600, 39600, 27700]);
+  const seven = (await customer.api('/quote?days=7')).data; // days 6 and 7 stay at A$54
+  assert.equal(seven.subtotalCents, 46800);
+  for (const q of [two, five, seven]) {
+    for (const k of ['listSubtotalCents', 'discountCents', 'subtotalCents', 'gstCents', 'totalCents', 'tokenCents', 'subtotalTokenCents']) assert.equal(q[k] % 100, 0, k);
+  }
+});
+
+await step('token basis: 62 tokens -> 62 x 1.43 = A$88.66 -> A$89 + A$9 GST = A$98 = 69 tokens', async () => {
   await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_basis: 'tokens', daily_rate_token_cents: 6200 } } });
   const { data: q } = await customer.api('/quote?days=1');
-  assert.equal(q.subtotalCents, 8866);
-  assert.equal(q.gstCents, 887);
-  assert.equal(q.totalCents, 9753);
-  assert.equal(q.tokenCents, 6820);
+  assert.equal(q.subtotalCents, 8900);
+  assert.equal(q.gstCents, 900);
+  assert.equal(q.totalCents, 9800);
+  assert.equal(q.tokenCents, 6900);
   await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_basis: 'aud' } } });
+  // Prices entered with cents are rounded up to whole dollars.
+  const preview = await admin.api('/admin/pricing/preview', { method: 'POST', body: { settings: { daily_rate_aud_cents: 9050 } } });
+  assert.equal(preview.data.dailyQuote.subtotalCents, 9100);
 });
 
 await step('booking is blocked until the licence is verified', async () => {
-  const { status } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '10:00', days: 1, acceptDisclaimer: true } });
+  const { status } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '10:00', days: 1, acceptDisclaimer: true, ...BRISBANE } });
   assert.equal(status, 409);
 });
 
@@ -158,7 +189,7 @@ await step('customer adds insurance with $2M indemnity confirmation', async () =
 });
 
 await step('booking needs enough tokens', async () => {
-  const { status } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '10:00', days: 1, acceptDisclaimer: true } });
+  const { status } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '10:00', days: 1, acceptDisclaimer: true, ...BRISBANE } });
   assert.equal(status, 402);
 });
 
@@ -173,33 +204,43 @@ await step('booking requires the disclaimer to be accepted', async () => {
   assert.equal(status, 400);
 });
 
-await step('customer books 24 hours for 69.23 tokens', async () => {
-  const { status, data } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '10:00', days: 1, acceptDisclaimer: true, note: 'Moving boxes' } });
+await step('booking needs the device location, within 50 km of the depot', async () => {
+  const body = { date: plusDays(4), time: '10:00', days: 1, acceptDisclaimer: true };
+  assert.equal((await customer.api('/bookings', { method: 'POST', body })).status, 400);
+  const far = await customer.api('/bookings', { method: 'POST', body: { ...body, ...SYDNEY } });
+  assert.equal(far.status, 403);
+  assert.match(far.data.error, /within 50 km/);
+});
+
+await step('customer books 24 hours for 70 tokens', async () => {
+  const { status, data } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '10:00', days: 1, acceptDisclaimer: true, ...BRISBANE, note: 'Moving boxes' } });
   assert.equal(status, 201, JSON.stringify(data));
   bookingId = data.booking.id;
-  assert.equal(data.booking.tokenCents, 6923);
+  assert.equal(data.booking.tokenCents, 7000);
   assert.equal(data.booking.totalCents, 9900);
   const me = await customer.api('/me');
-  assert.equal(me.data.user.tokenCents, 7000 - 6923);
+  assert.equal(me.data.user.tokenCents, 0);
 });
 
 await step('overlapping booking is refused and shows on the calendar', async () => {
+  const fractional = await admin.api(`/admin/users/${customerId}/tokens`, { method: 'POST', body: { tokens: 5.5, note: 'Not whole' } });
+  assert.equal(fractional.status, 400);
   await admin.api(`/admin/users/${customerId}/tokens`, { method: 'POST', body: { tokens: 200, note: 'Smoke test credit' } });
-  const { status } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '18:00', days: 1, acceptDisclaimer: true } });
+  const { status } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '18:00', days: 1, acceptDisclaimer: true, ...BRISBANE } });
   assert.equal(status, 409);
   const { data } = await customer.api(`/availability?from=${plusDays(0)}&to=${plusDays(10)}`);
   assert.ok(data.busy.some((r) => r.kind === 'booking'));
 });
 
 await step('two simultaneous bookings for the same slot: exactly one succeeds', async () => {
-  const body = { date: plusDays(9), time: '09:00', days: 1, acceptDisclaimer: true };
+  const body = { date: plusDays(9), time: '09:00', days: 1, acceptDisclaimer: true, ...BRISBANE };
   const results = await Promise.all([customer.api('/bookings', { method: 'POST', body }), customer.api('/bookings', { method: 'POST', body })]);
   assert.deepEqual(results.map((r) => r.status).sort(), [201, 409]);
 });
 
 await step('admin blocks dates and they become unavailable', async () => {
   assert.equal((await admin.api('/admin/blocks', { method: 'POST', body: { startDate: plusDays(20), endDate: plusDays(21), reason: 'Service' } })).status, 201);
-  const { status } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(20), time: '10:00', days: 1, acceptDisclaimer: true } });
+  const { status } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(20), time: '10:00', days: 1, acceptDisclaimer: true, ...BRISBANE } });
   assert.equal(status, 409);
 });
 
@@ -229,7 +270,7 @@ await step('customer cancels more than 48h ahead and gets tokens back', async ()
   const before = (await customer.api('/me')).data.user.tokenCents;
   assert.equal((await customer.api(`/bookings/${bookingId}/cancel`, { method: 'POST' })).status, 200);
   const after = (await customer.api('/me')).data.user.tokenCents;
-  assert.equal(after - before, 6923);
+  assert.equal(after - before, 7000);
 });
 
 await step('admin dashboard, bookings and audit log load', async () => {
@@ -245,6 +286,26 @@ await step('hub returns location, time zone and exchange rate', async () => {
   assert.equal(status, 200);
   assert.equal(data.timezone, 'Australia/Brisbane');
   assert.ok(data.fx.rate > 0);
+});
+
+await step('location panel: AUD pricing in Australia and New Zealand, USD elsewhere', async () => {
+  const anon = new Client();
+  const local = await anon.api('/locale');
+  assert.equal(local.status, 200);
+  assert.equal(local.data.countryCode, 'AU');
+  assert.equal(local.data.pricingCurrency, 'AUD');
+  assert.equal(local.data.currency.code, 'AUD');
+  assert.equal(local.data.currency.perUsd, local.data.audPerUsd);
+  const nz = (await anon.api('/locale?lat=-36.85&lng=174.76&cc=NZ')).data;
+  assert.equal(nz.pricingCurrency, 'AUD');
+  assert.equal(nz.currency.code, 'NZD');
+  const uk = (await anon.api('/locale?lat=51.51&lng=-0.13&cc=GB')).data;
+  assert.equal(uk.pricingCurrency, 'USD');
+  assert.equal(uk.currency.code, 'GBP');
+  assert.ok(uk.depot.km > 16000);
+  assert.equal((await anon.api('/locale?lat=200&lng=0')).status, 400);
+  const page = await anon.req('/terms');
+  assert.ok(page.data.includes('id="localeBar"') && page.data.includes('id="localeDialog"'));
 });
 
 await step('customer with an active booking cannot delete; after cancelling, can', async () => {

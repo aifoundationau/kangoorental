@@ -81,6 +81,32 @@ export async function ensureFreshRate() {
   await inFlight;
 }
 
+// Market rates from US$1 to every currency, for showing visitors their local currency (not used for pricing).
+let marketRates = { at: 0, tried: 0, rates: null, date: '' };
+let marketInFlight = null;
+
+/** { rates: { EUR: 0.92, ... } | null, date }: refreshed every few hours; retried at most every 10 minutes if the feed is down. */
+export async function usdMarketRates() {
+  const now = Date.now();
+  if (!marketInFlight && now - marketRates.at > REFRESH_MS && now - marketRates.tried > 10 * 60 * 1000) {
+    marketRates.tried = now;
+    marketInFlight = (async () => {
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/USD', { signal: AbortSignal.timeout(5000) });
+        const d = res.ok ? await res.json() : null;
+        if (d?.result !== 'success' || typeof d.rates !== 'object') throw new Error(`HTTP ${res.status}`);
+        marketRates = { at: Date.now(), tried: now, rates: d.rates, date: new Date(d.time_last_update_unix * 1000).toISOString().slice(0, 10) };
+      } catch (err) {
+        console.warn(`[fx] market rates failed: ${err.message}`);
+      } finally {
+        marketInFlight = null;
+      }
+    })();
+  }
+  if (marketInFlight) await marketInFlight;
+  return { rates: marketRates.rates, date: marketRates.date };
+}
+
 export function startFxUpdates() {
   const tick = async () => {
     try {

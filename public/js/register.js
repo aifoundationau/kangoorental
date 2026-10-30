@@ -1,75 +1,66 @@
-import { api, showError, setBusy, withShrunkLicence } from './common.js';
+import { api, showError, setBusy, withShrunkLicence, renderGoogleButton } from './common.js';
 
 const $ = (id) => document.getElementById(id);
-let coords = null;
+const GOOGLE_KEY = 'kangoo.google';
+let google = null; // { credential, email, fullName } when signing up with Google
 
-function unlock(on) {
-  $('detailsStep').disabled = !on;
-  $('licenceStep').disabled = !on;
-  $('regBtn').disabled = !on;
-}
-
-function requestLocation() {
-  const status = $('geoStatus');
-  status.className = 'geo-status';
-  if (!navigator.geolocation) {
-    status.textContent = 'Your browser does not support location, so we cannot register you online. Please contact us.';
-    status.classList.add('bad');
-    return;
-  }
-  status.textContent = 'Checking your location…';
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-    try {
-      const r = await api('/geo/check', { method: 'POST', body: { lat, lng } });
-      if (r.inArea) {
-        coords = { lat, lng, accuracy };
-        status.textContent = `You're about ${r.distanceKm} km from our depot. You can register.`;
-        status.classList.add('good');
-        $('geoBtn').hidden = true;
-        unlock(true);
-        $('fullName').focus();
-      } else {
-        status.textContent = `You're about ${r.distanceKm} km away. Registration is only open within ${r.radiusKm} km of our depot.`;
-        status.classList.add('bad');
-        unlock(false);
-      }
-    } catch (err) {
-      status.textContent = err.message;
-      status.classList.add('bad');
-    }
-  }, (err) => {
-    status.textContent = err.code === err.PERMISSION_DENIED
-      ? 'Location permission was denied. Allow location for this site in your browser settings, then try again.'
-      : 'We could not get your location. Please try again.';
-    status.classList.add('bad');
-  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+// Signing up with Google: use the Google email, skip the password.
+function applyGoogle(profile) {
+  google = profile;
+  sessionStorage.setItem(GOOGLE_KEY, JSON.stringify(profile));
+  if (!$('fullName').value) $('fullName').value = profile.fullName || '';
+  $('email').value = profile.email;
+  $('email').readOnly = true;
+  const pw = $('password');
+  pw.required = false;
+  pw.closest('.field').hidden = true;
+  document.querySelector('[data-google]').hidden = true;
+  const note = $('googleLinked');
+  note.textContent = `Signing up with Google as ${profile.email}. Fill in the rest below.`;
+  note.hidden = false;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  unlock(false);
-  $('geoBtn').addEventListener('click', requestLocation);
+  const saved = JSON.parse(sessionStorage.getItem(GOOGLE_KEY) || 'null');
+  if (saved?.credential) applyGoogle(saved);
+  else {
+    renderGoogleButton($('googleBtn'), async (credential) => {
+      try {
+        const r = await api('/auth/google', { method: 'POST', body: { credential } });
+        if (r.needsRegistration) return applyGoogle({ credential, ...r.profile });
+        window.location.href = '/account'; // already registered: now logged in
+      } catch (err) {
+        showError($('regError'), err);
+      }
+    }, 'signup_with');
+  }
 
   const form = $('registerForm');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const errEl = $('regError');
     showError(errEl, null);
-    if (!coords) return showError(errEl, new Error('Please share your location first.'));
     if (!form.reportValidity()) return;
 
     const data = new FormData(form);
-    data.set('lat', coords.lat);
-    data.set('lng', coords.lng);
-    data.set('accuracy', coords.accuracy);
+    if (google) {
+      data.set('googleCredential', google.credential);
+      data.delete('password');
+    }
     const btn = $('regBtn');
     setBusy(btn, true, 'Checking your licence…');
     try {
       const { licence } = await api('/auth/register', { method: 'POST', form: await withShrunkLicence(data) });
+      sessionStorage.removeItem(GOOGLE_KEY);
       sessionStorage.setItem('kangoo.licenceResult', JSON.stringify(licence));
       const pending = sessionStorage.getItem('kangoo.pendingBooking');
       window.location.href = pending && licence.status === 'verified' ? '/#book' : '/account?welcome=1';
     } catch (err) {
+      // Google sign-ins expire after about an hour; start the Google step again.
+      if (google && err.status === 401) {
+        sessionStorage.removeItem(GOOGLE_KEY);
+        err.message += ' Reload the page to sign in with Google again.';
+      }
       showError(errEl, err);
       setBusy(btn, false);
     }
