@@ -1,6 +1,6 @@
 import {
   api, getMe, getConfig, formatAud, formatUsd, formatTokens, formatRate, formatDateTime, formatStamp, toast,
-  showError, setBusy, escapeHtml,
+  showError, setBusy, escapeHtml, withShrunkLicence,
 } from './common.js';
 
 const $ = (id) => document.getElementById(id);
@@ -257,7 +257,7 @@ function bindForms() {
     showError($('licenceError'), null);
     setBusy(btn, true, 'Checking…');
     try {
-      const { licence } = await api('/account/licence', { method: 'POST', form: new FormData(e.target) });
+      const { licence } = await api('/account/licence', { method: 'POST', form: await withShrunkLicence(new FormData(e.target)) });
       toast(licence.notes, licence.status === 'rejected' ? 'error' : 'success');
       e.target.reset();
       await refreshMe();

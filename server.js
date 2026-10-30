@@ -9,7 +9,7 @@ import {
   HttpError, loadSession, csrfGuard, securityHeaders, purgeExpiredSessions, hashPassword, isStaff,
 } from './src/security.js';
 import { handleWebhook, paymentsMode } from './src/payments.js';
-import { startFxUpdates } from './src/fx.js';
+import { startFxUpdates, ensureFreshRate } from './src/fx.js';
 import { router as authRouter, createUser } from './src/routes/auth.js';
 import { router as bookingsRouter } from './src/routes/bookings.js';
 import { router as accountRouter } from './src/routes/account.js';
@@ -18,10 +18,19 @@ import { router as hubRouter } from './src/routes/hub.js';
 
 const app = express();
 app.disable('x-powered-by');
-if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY);
+if (config.onVercel) app.set('trust proxy', true);
+else if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY);
 
 app.use(securityHeaders);
+// Local only: on Vercel, files in public/ are served by the CDN and express.static is ignored.
 app.use(express.static(path.join(ROOT, 'public'), { maxAge: config.isProduction ? '1h' : 0 }));
+
+// Startup runs once per server instance, on the first request (serverless hosts have no boot step).
+app.use(async (req, res, next) => {
+  await startup();
+  await ensureFreshRate();
+  next();
+});
 
 // Stripe needs the raw body to verify its signature, so this route comes before the JSON parser.
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
@@ -39,7 +48,8 @@ app.use('/api', (req, res, next) => next(new HttpError(404, 'Not found.')));
 
 // Templates are read per request so edits show up without a restart. Only src/ is watched in dev:
 // on drives that record last-access times, watching folders the server reads from triggers restart loops.
-const readView = (name) => fs.readFileSync(path.join(ROOT, 'views', name), 'utf8');
+// The import.meta.url form lets Vercel's bundler find and ship the views/ folder.
+const readView = (name) => fs.readFileSync(new URL(`./views/${name}`, import.meta.url), 'utf8');
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const PAGES = {
@@ -101,7 +111,7 @@ app.use((err, req, res, next) => {
   let message = err.message;
   if (err instanceof multer.MulterError) {
     status = 400;
-    message = err.code === 'LIMIT_FILE_SIZE' ? 'Licence photo must be smaller than 5 MB.' : 'Upload failed. Please try again.';
+    message = err.code === 'LIMIT_FILE_SIZE' ? 'Licence photo must be smaller than 4 MB.' : 'Upload failed. Please try again.';
   } else if (err.type === 'entity.parse.failed') {
     status = 400;
     message = 'Invalid request.';
@@ -130,21 +140,37 @@ async function ensureSuperadmin() {
 
 const housekeeping = () => purgeExpiredSessions().catch((err) => console.warn('[sessions] purge failed:', err.message));
 
-console.log(`Connecting to Firestore database "${config.firestoreDatabase}"${process.env.FIRESTORE_EMULATOR_HOST ? ` (emulator ${process.env.FIRESTORE_EMULATOR_HOST})` : ''}…`);
-await initSettings();
-await ensureSuperadmin();
-housekeeping();
-setInterval(housekeeping, 3600 * 1000).unref();
-startFxUpdates();
+let ready = null;
+function startup() {
+  ready ||= (async () => {
+    console.log(`Connecting to Firestore database "${config.firestoreDatabase}"${process.env.FIRESTORE_EMULATOR_HOST ? ` (emulator ${process.env.FIRESTORE_EMULATOR_HOST})` : ''}…`);
+    await initSettings();
+    await ensureSuperadmin();
+    housekeeping();
+  })().catch((err) => {
+    ready = null; // let the next request retry
+    throw err;
+  });
+  return ready;
+}
 
-// Express 5 passes listen errors (e.g. port in use) to this callback instead of throwing.
-app.listen(config.port, (err) => {
-  if (err) {
-    console.error(err.code === 'EADDRINUSE'
-      ? `\nPort ${config.port} is already in use. Stop the other server, or set a different PORT in .env.\n`
-      : err);
-    process.exit(1);
-  }
-  console.log(`Kangoo Rental running at ${config.baseUrl}`);
-  console.log(`  payments: ${paymentsMode}   licence AI: ${config.licenceAiEnabled ? config.licenceModel : 'off (manual review)'}`);
-});
+// Vercel runs the exported app as a function; locally we listen on a port.
+export default app;
+
+if (!config.onVercel) {
+  await startup();
+  setInterval(housekeeping, 3600 * 1000).unref();
+  startFxUpdates();
+
+  // Express 5 passes listen errors (e.g. port in use) to this callback instead of throwing.
+  app.listen(config.port, (err) => {
+    if (err) {
+      console.error(err.code === 'EADDRINUSE'
+        ? `\nPort ${config.port} is already in use. Stop the other server, or set a different PORT in .env.\n`
+        : err);
+      process.exit(1);
+    }
+    console.log(`Kangoo Rental running at ${config.baseUrl}`);
+    console.log(`  payments: ${paymentsMode}   licence AI: ${config.licenceAiEnabled ? config.licenceModel : 'off (manual review)'}`);
+  });
+}

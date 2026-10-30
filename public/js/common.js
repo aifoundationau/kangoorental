@@ -67,6 +67,29 @@ export function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/** Downscales a photo in the browser (longest side 1600px, JPEG) so uploads stay small. Falls back to the original. */
+export async function shrinkImage(file, maxDim = 1600) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && file.size < 1500000) return file;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+    return blob || file;
+  } catch {
+    return file;
+  }
+}
+
+export async function withShrunkLicence(formData) {
+  const photo = formData.get('licence');
+  if (photo instanceof File && photo.size) formData.set('licence', await shrinkImage(photo), 'licence.jpg');
+  return formData;
+}
+
 /* ---------- UI helpers ---------- */
 
 let toastTimer;

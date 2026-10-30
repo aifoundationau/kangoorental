@@ -24,7 +24,7 @@ const SOURCES = [
 export async function refreshLiveRate() {
   for (const source of SOURCES) {
     try {
-      const res = await fetch(source.url, { signal: AbortSignal.timeout(8000) });
+      const res = await fetch(source.url, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) continue;
       const { rate, date } = source.read(await res.json());
       // Sanity bounds stop a bad feed from mispricing every booking.
@@ -62,6 +62,23 @@ export function currentRate(settings) {
     date: '',
     checkedAt: '',
   };
+}
+
+let inFlight = null;
+let lastAttempt = 0;
+
+/** Refreshes a stale live rate before serving prices. Needed on serverless hosts where timers don't run between requests. */
+export async function ensureFreshRate() {
+  const s = await getSettings();
+  const age = Date.now() - Date.parse(s.fx_live_checked_at || 0);
+  if (s.fx_mode !== 'live' || age < REFRESH_MS) return;
+  // If the feeds are down, retry at most every 10 minutes rather than slowing every request.
+  if (!inFlight && Date.now() - lastAttempt < 10 * 60 * 1000) return;
+  if (!inFlight) {
+    lastAttempt = Date.now();
+    inFlight = refreshLiveRate().finally(() => { inFlight = null; });
+  }
+  await inFlight;
 }
 
 export function startFxUpdates() {

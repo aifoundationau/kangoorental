@@ -11,13 +11,30 @@ if (process.argv.includes('--emulator')) {
 
 const env = process.env;
 
+// Service account key for hosts without Google credentials (e.g. Vercel): raw JSON or base64-encoded JSON.
+function serviceAccount() {
+  const raw = env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!raw) return null;
+  try {
+    const json = raw.trim().startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8');
+    const key = JSON.parse(json);
+    return { client_email: key.client_email, private_key: key.private_key, project_id: key.project_id };
+  } catch {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is not valid service account JSON.');
+  }
+}
+
+const vercelUrl = env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '';
+
 export const config = {
   port: Number(env.PORT || 3000),
-  baseUrl: (env.BASE_URL || `http://localhost:${env.PORT || 3000}`).replace(/\/$/, ''),
+  baseUrl: (env.BASE_URL || vercelUrl || `http://localhost:${env.PORT || 3000}`).replace(/\/$/, ''),
   isProduction: env.NODE_ENV === 'production',
+  onVercel: Boolean(env.VERCEL),
 
   // Firestore (native mode). Locally this uses Application Default Credentials (gcloud auth application-default login);
-  // on Google Cloud it uses the service account. Set FIRESTORE_EMULATOR_HOST to use the local emulator instead.
+  // on Vercel set GOOGLE_SERVICE_ACCOUNT_KEY. Set FIRESTORE_EMULATOR_HOST to use the local emulator instead.
+  serviceAccount: serviceAccount(),
   firestoreProject: env.FIRESTORE_PROJECT_ID || env.GOOGLE_CLOUD_PROJECT || '',
   firestoreDatabase: env.FIRESTORE_DATABASE_ID || 'kangoorental',
 
@@ -36,7 +53,8 @@ export const config = {
   adminPassword: env.ADMIN_PASSWORD || '',
 
   sessionDays: 14,
-  maxLicenceBytes: 5 * 1024 * 1024,
+  // Vercel rejects request bodies over 4.5 MB; browsers shrink photos before upload, so this is rarely reached.
+  maxLicenceBytes: 4 * 1024 * 1024,
 };
 
 // Defaults written to the settings table on first run; all editable by the superadmin.

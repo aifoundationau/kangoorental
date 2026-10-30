@@ -1,4 +1,4 @@
-import { api, showError, setBusy } from './common.js';
+import { api, showError, setBusy, withShrunkLicence } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 let coords = null;
@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = $('regBtn');
     setBusy(btn, true, 'Checking your licence…');
     try {
-      const { licence } = await api('/auth/register', { method: 'POST', form: data });
+      const { licence } = await api('/auth/register', { method: 'POST', form: await withShrunkLicence(data) });
       sessionStorage.setItem('kangoo.licenceResult', JSON.stringify(licence));
       const pending = sessionStorage.getItem('kangoo.pendingBooking');
       window.location.href = pending && licence.status === 'verified' ? '/#book' : '/account?welcome=1';

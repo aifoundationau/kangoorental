@@ -15,8 +15,12 @@ import { config, DEFAULT_SETTINGS } from './config.js';
 //   auditLog/{id}                    security-relevant events
 //   locks/calendar                   touched by every booking change so overlapping bookings serialise
 
+const sa = config.serviceAccount;
+const projectId = config.firestoreProject || sa?.project_id;
+
 export const firestore = new Firestore({
-  ...(config.firestoreProject ? { projectId: config.firestoreProject } : {}),
+  ...(projectId ? { projectId } : {}),
+  ...(sa ? { credentials: { client_email: sa.client_email, private_key: sa.private_key } } : {}),
   databaseId: config.firestoreDatabase,
   ignoreUndefinedProperties: true,
 });
