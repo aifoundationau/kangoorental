@@ -14,9 +14,9 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
-    "dev": "node --watch-path=src server.js",
+    "dev": "node --watch-path=src --watch-path=server.js server.js",
     "emulator": "firebase emulators:start --only firestore --project demo-kangoo",
-    "dev:emulator": "node --watch-path=src server.js --emulator",
+    "dev:emulator": "node --watch-path=src --watch-path=server.js server.js --emulator",
     "create-admin": "node --env-file-if-exists=.env scripts/create-admin.js",
     "migrate-roles": "node --env-file-if-exists=.env scripts/migrate-roles.js",
     "smoke": "node scripts/smoke-test.js"

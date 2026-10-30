@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
-import { firestore, col, docData, nowIso, getSettings, num, audit } from '../db.js';
+import { firestore, col, docData, nowIso, getSettings, num, audit, FieldValue } from '../db.js';
 import {
   HttpError, hashPassword, verifyPassword, createSession, destroySession, rateLimit, requireUser,
   destroyAllSessions, isStaff,
@@ -196,10 +196,39 @@ router.post('/auth/login', authLimiter, async (req, res) => {
   res.json({ user: publicUser(user), csrf });
 });
 
+/**
+ * Makes the Google account behind a superadmin email (config.superadminEmails) a superadmin, creating the account if needed.
+ * Only a verified Google sign-in proves the email, so the account becomes Google-only: any password is removed and other
+ * sessions are signed out, in case someone registered that email with a password first.
+ */
+export async function superadminFromGoogle(google, ip) {
+  let user = (await findUserByGoogleSub(google.sub)) || (await findUserByEmail(google.email));
+  if (user?.googleSub && user.googleSub !== google.sub) throw new HttpError(409, 'This email is linked to a different Google account.');
+  if (!user) {
+    const id = await createUser({ role: 'superadmin', email: google.email, fullName: google.name || 'Superadmin', googleSub: google.sub });
+    audit(id, 'superadmin.create', `${google.email} (Google)`, ip);
+    return getUser(id);
+  }
+  if (user.role !== 'superadmin' || user.passwordHash || user.disabled || !user.googleSub) {
+    await col.users.doc(user.id).update({ role: 'superadmin', googleSub: google.sub, passwordHash: FieldValue.delete(), disabled: false });
+    await destroyAllSessions(user.id);
+    audit(user.id, 'superadmin.promote', `${google.email} (Google; was ${user.role})`, ip);
+    return getUser(user.id);
+  }
+  return user;
+}
+
 // Google sign-in: logs in an existing account (linking Google to it on first use, matched by verified email),
 // or tells the browser to continue to registration with the Google details prefilled.
 router.post('/auth/google', authLimiter, async (req, res) => {
   const google = await verifyGoogleCredential(req.body?.credential);
+  if (config.superadminEmails.includes(google.email)) {
+    const owner = await superadminFromGoogle(google, req.ip);
+    if (req.sessionId) await destroySession(req, res);
+    const csrf = await createSession(res, owner.id);
+    audit(owner.id, 'login', 'Google (superadmin)', req.ip);
+    return res.json({ user: publicUser(owner), csrf });
+  }
   let user = await findUserByGoogleSub(google.sub);
   if (!user) {
     user = await findUserByEmail(google.email);

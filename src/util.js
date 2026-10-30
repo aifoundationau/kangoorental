@@ -27,49 +27,74 @@ export function addDays(dateStr, n) {
   return new Date(Date.parse(`${dateStr}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 }
 
+/** Brisbane calendar date of an epoch-ms time, e.g. "2026-11-03". */
+export const brisbaneDate = (ms) => new Date(ms + 10 * 3600000).toISOString().slice(0, 10);
+
+/** "Tue 3 Nov" for a calendar date. */
+export const dayLabel = (dateStr) => new Date(`${dateStr}T12:00:00Z`).toLocaleDateString('en-AU', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' });
+
+/** Pickup and return days: the usual week plus single-date changes (see DEFAULT_SETTINGS.handover_*). */
+export function handoverRules(settings) {
+  const weekdays = String(settings.handover_weekdays ?? '').split(',').filter((s) => s.trim() !== '').map(Number);
+  const overrides = Object.fromEntries(String(settings.handover_overrides || '').split(',').filter(Boolean)
+    .map((entry) => entry.split(':')).map(([date, open]) => [date, open === '1']));
+  return { weekdays, overrides };
+}
+
+/** Can the van be picked up or returned on this Brisbane date? */
+export function isHandoverDay(rules, dateStr) {
+  if (dateStr in rules.overrides) return rules.overrides[dateStr];
+  return rules.weekdays.includes(new Date(`${dateStr}T00:00:00Z`).getUTCDay());
+}
+
 export function ageOn(dobStr, onDateStr) {
   const [y, m, d] = dobStr.split('-').map(Number);
   const [ty, tm, td] = onDateStr.split('-').map(Number);
   return ty - y - (tm < m || (tm === m && td < d) ? 1 : 0);
 }
 
-/** Rounds up to a whole number, ignoring floating-point dust (e.g. 100.00000000000001 stays 100). */
-export const ceilWhole = (n) => Math.ceil(n - 1e-9) || 0; // `|| 0` turns -0 into 0
+/** Rounds down to a whole number, ignoring floating-point dust (e.g. 164.99999999999997 counts as 165). */
+export const floorWhole = (n) => Math.floor(n + 1e-9) || 0; // `|| 0` turns -0 into 0
+
+/** The price list as numbers: total AUD ex GST for 1, 2, 3... days (see DEFAULT_SETTINGS.price_table). */
+export function priceTable(settings) {
+  const table = String(settings.price_table || '').split(',').map(Number);
+  return table.length && table.every((n) => n > 0) ? table : [1];
+}
+
+/** Longest hire: the admin setting, but never longer than the price list. */
+export const maxRentalDays = (settings) => Math.min(num(settings, 'max_rental_days'), priceTable(settings).length);
 
 /**
  * Prices a rental. Tokens are US$1 each; `fxRate` is AUD per US$1.
- * basis 'aud':    AUD rate is fixed  -> tokens = AUD / rate
- * basis 'tokens': token rate is fixed -> AUD = tokens x rate
- * Multi-day discount: day 2 is 10% off, day 3 20%, day 4 30%, and day 5 onwards 40% (see the multiday_discount_* settings).
+ * basis 'aud':    AUD prices are fixed by the price list -> tokens = AUD / rate
+ * basis 'tokens': the daily token rate is fixed, and longer hires follow the price list's steps -> AUD = tokens x rate
  * GST is added on the AUD amount, and the customer is charged the GST-inclusive total in tokens.
- * Every dollar and token amount is a whole number, rounded up. Amounts are returned in cents to match stored records.
+ * Every dollar and token amount is a whole number, rounded down. Amounts are returned in cents to match stored records.
+ * `days` must be between 1 and maxRentalDays(settings).
  */
 export function quote(settings, days, fxRate) {
   const basis = settings.price_basis === 'tokens' ? 'tokens' : 'aud';
   const gstBp = num(settings, 'gst_rate_bp');
-  const stepBp = num(settings, 'multiday_discount_step_bp');
-  const maxBp = num(settings, 'multiday_discount_max_bp');
-  const discounted = (dailyRate) => Array.from({ length: days }, (_, i) => ceilWhole((dailyRate * (10000 - Math.min(i * stepBp, maxBp))) / 10000))
-    .reduce((a, b) => a + b, 0);
+  const table = priceTable(settings);
 
   let listAud;
   let subtotalAud;
   let listTokens;
   let subtotalTokens;
   if (basis === 'aud') {
-    const daily = ceilWhole(num(settings, 'daily_rate_aud_cents') / 100);
-    listAud = daily * days;
-    subtotalAud = discounted(daily);
-    listTokens = ceilWhole(listAud / fxRate);
-    subtotalTokens = ceilWhole(subtotalAud / fxRate);
+    listAud = table[0] * days;
+    subtotalAud = table[days - 1];
+    listTokens = floorWhole(listAud / fxRate);
+    subtotalTokens = floorWhole(subtotalAud / fxRate);
   } else {
-    const daily = ceilWhole(num(settings, 'daily_rate_token_cents') / 100);
+    const daily = floorWhole(num(settings, 'daily_rate_token_cents') / 100);
     listTokens = daily * days;
-    subtotalTokens = discounted(daily);
-    listAud = ceilWhole(listTokens * fxRate);
-    subtotalAud = ceilWhole(subtotalTokens * fxRate);
+    subtotalTokens = floorWhole((daily * table[days - 1]) / table[0]);
+    listAud = floorWhole(listTokens * fxRate);
+    subtotalAud = floorWhole(subtotalTokens * fxRate);
   }
-  const gstAud = ceilWhole((subtotalAud * gstBp) / 10000);
+  const gstAud = floorWhole((subtotalAud * gstBp) / 10000);
   const totalAud = subtotalAud + gstAud;
   return {
     days,
@@ -83,7 +108,7 @@ export function quote(settings, days, fxRate) {
     totalCents: totalAud * 100,
     listSubtotalTokenCents: listTokens * 100,
     subtotalTokenCents: subtotalTokens * 100,
-    tokenCents: ceilWhole(totalAud / fxRate) * 100,
+    tokenCents: floorWhole(totalAud / fxRate) * 100,
   };
 }
 

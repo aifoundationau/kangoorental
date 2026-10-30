@@ -9,7 +9,8 @@ import {
   HttpError, loadSession, csrfGuard, securityHeaders, purgeExpiredSessions, hashPassword, isStaff,
 } from './src/security.js';
 import { handleWebhook, paymentsMode } from './src/payments.js';
-import { startFxUpdates, ensureFreshRate } from './src/fx.js';
+import { startFxUpdates, ensureFreshRate, currentRate } from './src/fx.js';
+import { quote, maxRentalDays } from './src/util.js';
 import { router as authRouter, createUser } from './src/routes/auth.js';
 import { router as bookingsRouter } from './src/routes/bookings.js';
 import { router as accountRouter } from './src/routes/account.js';
@@ -70,6 +71,8 @@ const NOT_FOUND = { view: 'pages/404.html', title: 'Page not found' };
 
 async function pageContext() {
   const s = await getSettings();
+  const rate = currentRate(s).rate;
+  const days = maxRentalDays(s);
   return {
     business_name: s.business_name,
     pickup_label: s.pickup_label,
@@ -81,6 +84,10 @@ async function pageContext() {
     contact_email: s.contact_email ? `at ${s.contact_email}` : 'through the message centre in your account',
     contact_phone: s.contact_phone || '',
     session_days: String(config.sessionDays),
+    max_days: String(days),
+    // "1 day A$90, 2 days A$165, ... and 7 days A$350" (before GST)
+    price_list: Array.from({ length: days }, (_, i) => `${i + 1} day${i ? 's' : ''} A$${(quote(s, i + 1, rate).subtotalCents / 100).toLocaleString('en-AU')}`)
+      .join(', ').replace(/, ([^,]*)$/, ' and $1'),
   };
 }
 

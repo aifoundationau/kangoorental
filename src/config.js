@@ -61,6 +61,10 @@ export const config = {
   // server verifies Google's signed ID token. Add each site origin to the client's Authorised JavaScript origins.
   googleClientId: env.GOOGLE_OAUTH_CLIENT_ID ?? '614773274800-9pooin0jia9ij91qjlk7r6r6ne02mbhg.apps.googleusercontent.com',
 
+  // Google accounts that are always superadmin when they sign in with Google (comma-separated). Defaults to the
+  // Firebase project owner. Only Google sign-in counts: it proves the email, a password sign-up doesn't.
+  superadminEmails: (env.SUPERADMIN_EMAILS ?? 'support@aifoundation.net.au').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+
   adminEmail: env.ADMIN_EMAIL || '',
   adminPassword: env.ADMIN_PASSWORD || '',
 
@@ -75,11 +79,11 @@ export const config = {
 export const DEFAULT_SETTINGS = {
   business_name: 'Kangoo Rental',
   price_basis: 'aud',                // 'aud' = daily rate fixed in AUD; 'tokens' = daily rate fixed in tokens (USD)
-  daily_rate_aud_cents: '9000',      // AUD $90 ex GST per 24 hours (used when price_basis = aud)
   daily_rate_token_cents: '6300',    // 63 tokens ex GST per 24 hours (used when price_basis = tokens)
   gst_rate_bp: '1000',               // 10% GST, in basis points
-  multiday_discount_step_bp: '1000', // each day after the first is another 10% off...
-  multiday_discount_max_bp: '4000',  // ...up to 40% off (day 5), which then applies to every later day
+  // Price list: total whole AUD ex GST for a 1, 2, 3... day hire (superadmin edits it under Pricing). The 1-day price
+  // is the daily rate, and the list's length is the longest hire allowed.
+  price_table: '90,165,230,280,315,340,350',
   fx_mode: 'live',                   // 'live' = daily market rate, 'manual' = fx_manual_rate
   fx_manual_rate: '1.4300',          // AUD per USD 1.00
   fx_live_rate: '',
@@ -95,7 +99,11 @@ export const DEFAULT_SETTINGS = {
   cancellation_hours: '48',
   buffer_hours: '1',
   min_notice_hours: '4',
-  max_rental_days: '30',
+  max_rental_days: '7',
+  // Days the van can be picked up or returned (the owner works on other days). handover_weekdays is the usual week
+  // (0 = Sunday ... 6 = Saturday); handover_overrides switches single dates on or off: "2026-11-03:0,2026-11-07:1".
+  handover_weekdays: '0,1,2,3,4,5,6',
+  handover_overrides: '',
   max_advance_days: '180',
   first_pickup_hour: '7',
   last_pickup_hour: '18',

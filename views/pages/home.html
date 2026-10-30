@@ -19,11 +19,22 @@
       </div>
     </section>
 
+    <section class="section section-save" id="pricing" aria-labelledby="saveTitle">
+      <div class="container">
+        <div class="price-cards-head">
+          <h2 id="saveTitle">Hire for longer and save</h2>
+          <p class="hint">Prices before GST. Choose a card to set your hire length.</p>
+        </div>
+        <div class="price-cards" id="pxCards"></div>
+      </div>
+    </section>
+
     <section class="section" id="book" aria-labelledby="bookTitle">
       <div class="container">
         <div class="section-head">
           <h2 id="bookTitle">Book the van</h2>
-          <p>Pick a date, a pickup time and how many 24-hour periods you need.</p>
+          <p>Click the days you need on the calendar, up to {{max_days}} in a row, then choose a pickup time.
+            Striped days have no pickups or returns.</p>
         </div>
 
         <div class="booking-grid">
@@ -35,11 +46,14 @@
             </div>
             <div class="calendar" id="calendar" role="grid" aria-labelledby="calTitle"></div>
             <ul class="legend">
+              <li><span class="dot chosen"></span>Your days</li>
+              <li><span class="dot return"></span>Return day</li>
               <li><span class="dot available"></span>Available</li>
+              <li><span class="dot nohandover"></span>No pickups or returns</li>
               <li><span class="dot partial"></span>Partly booked</li>
               <li><span class="dot booked"></span>Booked</li>
-              <li><span class="dot blocked"></span>Unavailable</li>
             </ul>
+            <p class="cal-note" id="calNote" role="status" hidden></p>
           </div>
 
           <form class="card booking-form" id="bookingForm" novalidate>
@@ -47,15 +61,13 @@
               <label for="bkDate">Pickup date</label>
               <input id="bkDate" name="date" type="date" required>
             </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="bkTime">Pickup time (Brisbane)</label>
-                <select id="bkTime" name="time" required></select>
-              </div>
-              <div class="field">
-                <label for="bkDays">24-hour periods</label>
-                <select id="bkDays" name="days" required></select>
-              </div>
+            <div class="field">
+              <label for="bkTime">Pickup time (Brisbane)</label>
+              <select id="bkTime" name="time" required></select>
+            </div>
+            <div class="field">
+              <span class="label" id="bkDaysLabel">How long? <span class="optional">(24-hour periods, before GST)</span></span>
+              <div class="day-cards" id="bkDays" role="radiogroup" aria-labelledby="bkDaysLabel"></div>
             </div>
             <p class="hint" id="bkReturn">Return by: choose a date</p>
 
@@ -88,18 +100,6 @@
             <p class="hint center" id="bkAuthHint">You'll need to register and verify your licence before booking.</p>
           </form>
         </div>
-      </div>
-    </section>
-
-    <section class="section section-alt" id="pricing" aria-labelledby="pricingTitle">
-      <div class="container">
-        <h2 id="pricingTitle">Pricing</h2>
-        <div class="price-stats">
-          <div class="card"><strong id="pxPrice">A$99.00</strong><span>per 24 hours, inc GST</span></div>
-          <div class="card"><strong id="pxTokens">–</strong><span>tokens per 24 hours</span></div>
-          <div class="card"><strong id="pxToken">1 token = US$1</strong><span id="pxRate">today's rate</span></div>
-        </div>
-        <p class="price-note" id="pxDiscount">Longer hire saves: 10% off day 2, 20% off day 3, 30% off day 4 and 40% off day 5 onwards.</p>
       </div>
     </section>
 

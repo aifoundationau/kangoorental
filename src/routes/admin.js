@@ -3,7 +3,10 @@ import {
   firestore, col, allDocs, docData, nowIso, getSettings, setSettings, audit, FieldValue,
 } from '../db.js';
 import { HttpError, requireAdmin, requireSuperadmin, hashPassword, destroyAllSessions } from '../security.js';
-import { str, int, validDate, brisbaneToday, quote, ceilWhole, PATTERNS } from '../util.js';
+import {
+  str, int, validDate, brisbaneToday, brisbaneDate, brisbaneTime, addDays, quote, floorWhole, maxRentalDays, handoverRules,
+  isHandoverDay, PATTERNS,
+} from '../util.js';
 import { currentRate, refreshLiveRate } from '../fx.js';
 import { publicUser, getUser, createUser } from './auth.js';
 import { cancelBooking } from './bookings.js';
@@ -48,7 +51,7 @@ router.get('/admin/stats', async (req, res) => {
 
 /* ---------- Settings: pricing, currency conversion and site options (superadmin) ---------- */
 
-const wholeCents = (cents) => ceilWhole(cents / 100) * 100;
+const wholeCents = (cents) => floorWhole(cents / 100) * 100;
 
 const SETTING_RULES = {
   business_name: (v) => str(v, { field: 'Business name', max: 80 }),
@@ -56,8 +59,16 @@ const SETTING_RULES = {
     if (!['aud', 'tokens'].includes(v)) throw new HttpError(400, 'Price basis must be AUD or tokens.');
     return v;
   },
-  // Prices are whole dollars and whole tokens, rounded up.
-  daily_rate_aud_cents: (v) => wholeCents(int(v, { field: 'Daily rate (AUD)', min: 100, max: 10000000 })),
+  // Prices are whole dollars and whole tokens, rounded down.
+  // Total price for a 1, 2, 3... day hire, whole AUD ex GST (comma-separated). Longer hires can't cost less.
+  price_table: (v) => {
+    const prices = String(v).split(',').map((s) => floorWhole(Number(s.trim())));
+    if (prices.length < 1 || prices.length > 30 || prices.some((n) => !(n >= 1 && n <= 100000))) {
+      throw new HttpError(400, 'Enter a price of at least A$1 for every hire length.');
+    }
+    if (prices.some((n, i) => i > 0 && n < prices[i - 1])) throw new HttpError(400, "A longer hire can't cost less than a shorter one.");
+    return prices.join(',');
+  },
   daily_rate_token_cents: (v) => wholeCents(int(v, { field: 'Daily rate (tokens)', min: 100, max: 10000000 })),
   gst_rate_bp: (v) => int(v, { field: 'GST rate', min: 0, max: 5000 }),
   fx_mode: (v) => {
@@ -85,6 +96,25 @@ const SETTING_RULES = {
   buffer_hours: (v) => int(v, { field: 'Turnaround buffer', min: 0, max: 48 }),
   min_notice_hours: (v) => int(v, { field: 'Minimum notice', min: 0, max: 720 }),
   max_rental_days: (v) => int(v, { field: 'Maximum rental days', min: 1, max: 90 }),
+  // Pickup and return days: the usual week (0 = Sunday ... 6 = Saturday) and single-date changes ("2026-11-03:0").
+  handover_weekdays: (v) => {
+    const days = [...new Set(String(v).split(',').filter((s) => s.trim() !== '').map(Number))];
+    if (days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw new HttpError(400, 'Weekdays must be numbers from 0 (Sunday) to 6 (Saturday).');
+    return days.sort().join(',');
+  },
+  handover_overrides: (v) => {
+    const entries = String(v).split(',').map((s) => s.trim()).filter(Boolean);
+    if (entries.length > 2000) throw new HttpError(400, 'Too many pickup-day changes. Remove some older ones.');
+    const today = brisbaneToday();
+    const kept = new Map();
+    for (const entry of entries) {
+      const [date, open] = entry.split(':');
+      validDate(date, 'Pickup day');
+      if (open !== '0' && open !== '1') throw new HttpError(400, 'Each pickup-day change must be on (1) or off (0).');
+      if (date >= today) kept.set(date, open); // past dates no longer matter
+    }
+    return [...kept].sort(([a], [b]) => a.localeCompare(b)).map(([date, open]) => `${date}:${open}`).join(',');
+  },
   max_advance_days: (v) => int(v, { field: 'Maximum advance days', min: 1, max: 730 }),
   first_pickup_hour: (v) => int(v, { field: 'First pickup hour', min: 0, max: 23 }),
   last_pickup_hour: (v) => int(v, { field: 'Last pickup hour', min: 0, max: 23 }),
@@ -105,7 +135,8 @@ function cleanSettings(updates) {
 
 function pricingView(settings) {
   const fx = currentRate(settings);
-  return { settings, fx, dailyQuote: quote(settings, 1, fx.rate) };
+  const list = Array.from({ length: maxRentalDays(settings) }, (_, i) => quote(settings, i + 1, fx.rate));
+  return { settings, fx, dailyQuote: list[0], list };
 }
 
 router.get('/admin/settings', async (req, res) => res.json(pricingView(await getSettings())));
@@ -175,12 +206,83 @@ router.post('/admin/bookings/:id/status', async (req, res) => {
   res.json({ booking: docData(await col.bookings.doc(id).get()) });
 });
 
+/* ---------- Pickup and return days ---------- */
+
+/** The rules, plus upcoming bookings that now pick up or return on a day that isn't available. */
+async function handoverView() {
+  const rules = handoverRules(await getSettings());
+  const now = Date.now();
+  const conflicts = allDocs(await col.bookings.where('status', '==', 'confirmed').get())
+    .filter((b) => b.startAt > now)
+    .map((b) => {
+      const pickup = brisbaneDate(b.startAt);
+      const dropoff = brisbaneDate(b.endAt);
+      return { id: b.id, ref: b.ref, name: b.userName, pickup, dropoff, pickupOk: isHandoverDay(rules, pickup), dropoffOk: isHandoverDay(rules, dropoff) };
+    })
+    .filter((b) => !b.pickupOk || !b.dropoffOk)
+    .sort((a, b) => a.pickup.localeCompare(b.pickup));
+  return { ...rules, today: brisbaneToday(), conflicts };
+}
+
+router.get('/admin/handover', async (req, res) => res.json(await handoverView()));
+
+router.put('/admin/handover', requireSuperadmin, async (req, res) => {
+  const { weekdays, overrides } = req.body || {};
+  if (!Array.isArray(weekdays) || typeof overrides !== 'object' || overrides === null || Array.isArray(overrides)) {
+    throw new HttpError(400, 'Send the usual weekdays and the date changes.');
+  }
+  const clean = cleanSettings({
+    handover_weekdays: weekdays.join(','),
+    handover_overrides: Object.entries(overrides).map(([date, open]) => `${date}:${open === true ? 1 : 0}`).join(','),
+  });
+  await setSettings(clean);
+  audit(req.user.id, 'handover.update', `weekdays=${clean.handover_weekdays} changes=${clean.handover_overrides || 'none'}`.slice(0, 500), req.ip);
+  res.json(await handoverView());
+});
+
 /* ---------- Calendar blocks ---------- */
 
-router.get('/admin/blocks', async (req, res) => {
-  const blocks = allDocs(await col.blocks.where('endDate', '>=', brisbaneToday()).get())
+/** Current and future blocks, plus upcoming bookings that overlap a blocked day (blocking doesn't cancel them). */
+async function blocksView() {
+  const today = brisbaneToday();
+  const blocks = allDocs(await col.blocks.where('endDate', '>=', today).get())
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
-  res.json({ blocks });
+  const ranges = blocks.map((b) => [brisbaneTime(b.startDate), brisbaneTime(addDays(b.endDate, 1))]);
+  const now = Date.now();
+  const conflicts = allDocs(await col.bookings.where('status', 'in', ['confirmed', 'active']).get())
+    .filter((b) => b.endAt > now && ranges.some(([start, end]) => b.startAt < end && b.endAt > start))
+    .map((b) => ({ id: b.id, ref: b.ref, name: b.userName, pickup: brisbaneDate(b.startAt), dropoff: brisbaneDate(b.endAt) }))
+    .sort((a, b) => a.pickup.localeCompare(b.pickup));
+  return { blocks, today, conflicts };
+}
+
+router.get('/admin/blocks', async (req, res) => res.json(await blocksView()));
+
+// One click on the Block out dates calendar: takes the van off the road for that whole day, or puts it back.
+// Sets the day's state (rather than flipping it), so repeating a request is harmless.
+router.put('/admin/blocks/day', async (req, res) => {
+  const date = validDate(req.body?.date, 'Date');
+  if (typeof req.body?.blocked !== 'boolean') throw new HttpError(400, 'Say whether the day is blocked.');
+  if (date < brisbaneToday()) throw new HttpError(400, "Past dates can't be changed.");
+  const blocked = req.body.blocked;
+  await firestore.runTransaction(async (t) => {
+    const covering = (await t.get(col.blocks.where('endDate', '>=', date))).docs.filter((d) => d.data().startDate <= date);
+    if (blocked && !covering.length) {
+      t.create(col.blocks.doc(), { startDate: date, endDate: date, reason: null, createdAt: nowIso(), createdBy: req.user.id });
+    }
+    if (!blocked) {
+      // Unblocking one day of a longer block keeps the days either side blocked.
+      for (const doc of covering) {
+        const b = doc.data();
+        t.delete(doc.ref);
+        const keep = (startDate, endDate) => t.create(col.blocks.doc(), { ...b, startDate, endDate });
+        if (b.startDate < date) keep(b.startDate, addDays(date, -1));
+        if (b.endDate > date) keep(addDays(date, 1), b.endDate);
+      }
+    }
+  });
+  audit(req.user.id, blocked ? 'block.create' : 'block.delete', date, req.ip);
+  res.json(await blocksView());
 });
 
 router.post('/admin/blocks', async (req, res) => {

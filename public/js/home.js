@@ -1,5 +1,5 @@
 import {
-  api, getMe, getConfig, isStaff, formatAud, formatPrice, quotePrices, formatTokens, formatRate, formatDateTime, formatTime,
+  api, getMe, getConfig, isStaff, formatPrice, quotePrices, formatTokens, formatRate, formatDate, formatDateTime, formatTime,
   formatLongDate, weatherIcon, getDeviceLocation, toast, showError, setBusy, escapeHtml, ApiError,
 } from './common.js';
 import { pricingCurrency, DEPOT_TZ } from './prefs.js';
@@ -27,6 +27,7 @@ const state = {
 const brisbaneMs = (date, time = '00:00') => Date.parse(`${date}T${time}:00+10:00`);
 const isoDate = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+const dayDiff = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
 const hourLabel = (h) => formatTime(Date.UTC(2000, 0, 1, h), 'UTC');
 
 function slotOk(date, hour, days) {
@@ -85,10 +86,16 @@ function renderCalendar() {
     const date = isoDate(y, m, d);
     const status = dayStatus(date);
     const selectable = status === 'available' || status === 'partial';
-    const selected = date === state.date ? ' selected' : '';
+    // The hire's days: the pickup day and last day are solid, the days between are tinted.
+    const offset = state.date ? dayDiff(state.date, date) : -1;
+    const inRun = offset >= 0 && offset < state.days;
+    const run = inRun ? (offset === 0 || offset === state.days - 1 ? ' selected' : ' in-range') : '';
+    const noHandover = selectable && !handoverOk(date);
+    const returnDay = state.date && date === addDays(state.date, state.days);
     const today = date === state.cfg.today ? ' today' : '';
-    cells.push(`<button type="button" role="gridcell" class="cal-day ${status}${selected}${today}" data-date="${date}"
-      ${selectable ? '' : 'disabled'} aria-label="${date} ${status}" aria-pressed="${Boolean(selected)}">${d}</button>`);
+    cells.push(`<button type="button" role="gridcell" class="cal-day ${status}${noHandover ? ' nohandover' : ''}${run}${returnDay ? ' return-day' : ''}${today}"
+      data-date="${date}" data-testid="cal-${date}" data-agent-id="cal-${date}" ${selectable ? '' : 'disabled'} aria-pressed="${inRun}"
+      aria-label="${date} ${status}${noHandover ? ', no pickups or returns' : ''}${inRun ? ', in your hire' : ''}${returnDay ? ', your return day' : ''}">${d}</button>`);
   }
   $('calendar').innerHTML = cells.join('');
   const now = new Date(Date.now() + 10 * 3600000);
@@ -144,8 +151,8 @@ function renderQuote() {
   $('qTotal').textContent = formatPrice(p.total);
   $('qTokens').textContent = `${formatTokens(q.tokenCents)} tokens`;
   $('qRate').textContent = pricingCurrency() === 'AUD'
-    ? `Converted at today's exchange rate, US$1 = A$${formatRate(q.fxRate)}. Amounts are rounded up to whole dollars and tokens.`
-    : '1 token = US$1. Amounts are rounded up to whole dollars and tokens.';
+    ? `Converted at today's exchange rate, US$1 = A$${formatRate(q.fxRate)}. Amounts are rounded down to whole dollars and tokens.`
+    : '1 token = US$1. Amounts are rounded down to whole dollars and tokens.';
 }
 
 function renderPricing() {
@@ -153,25 +160,128 @@ function renderPricing() {
   const q = cfg.dailyQuote;
   const p = quotePrices(q);
   $('heroPrice').innerHTML = `<span class="price-main">${formatPrice(p.subtotal)}</span><span class="price-sub">+ GST per 24 hours &middot; ${formatTokens(q.tokenCents)} tokens</span>`;
-  $('pxPrice').textContent = formatPrice(p.total);
-  $('pxTokens').textContent = formatTokens(q.tokenCents);
-  const aud = pricingCurrency() === 'AUD';
-  $('pxToken').textContent = aud ? `100 tokens ≈ ${formatAud(cfg.fx.rate * 10000)}` : '1 token = US$1';
-  $('pxRate').textContent = aud ? "at today's exchange rate" : 'prepaid credit for hire';
-  const { stepBp, maxBp } = cfg.multidayDiscount;
-  const steps = [];
-  for (let bp = stepBp, day = 2; stepBp > 0 && bp <= maxBp; bp += stepBp, day++) steps.push(`${bp / 100}% off day ${day}`);
-  $('pxDiscount').hidden = !steps.length;
-  if (steps.length) steps[steps.length - 1] += ' onwards';
-  $('pxDiscount').textContent = `Longer hire saves: ${steps.slice(0, -1).join(', ')}${steps.length > 1 ? ' and ' : ''}${steps.at(-1) || ''}.`;
+  renderPriceCards();
 }
 
-function renderDaysSelect() {
-  const sel = $('bkDays');
-  const opts = [];
-  for (let d = 1; d <= state.cfg.maxRentalDays; d++) opts.push(`<option value="${d}">${d} × 24 hours</option>`);
-  sel.innerHTML = opts.join('');
-  sel.value = String(state.days);
+/** One price card per hire length (prices set by the superadmin). The selected card matches the booking's hire length. */
+function renderPriceCards() {
+  const list = state.cfg.priceList;
+  const day1 = list[0];
+  $('pxCards').innerHTML = list.map((p) => {
+    const label = `${p.days} day${p.days > 1 ? 's' : ''}`;
+    const price = formatPrice({ aud: p.audCents, usd: p.usdCents });
+    const save = { aud: day1.audCents * p.days - p.audCents, usd: day1.usdCents * p.days - p.usdCents };
+    const best = p.days === list.length && list.length > 1;
+    return `<button type="button" class="postcard${best ? ' best' : ''}" data-days="${p.days}" aria-pressed="${p.days === state.days}"
+        data-testid="price-card-${p.days}" data-agent-id="price-card-${p.days}" aria-label="${label} for ${price} before GST">
+      ${best ? '<span class="pc-ribbon">Best value</span>' : ''}
+      <span class="pc-days">${label}</span>
+      <strong class="pc-price">${price}</strong>
+      <span class="pc-sub">+ GST · ${formatPrice({ aud: p.audCents / p.days, usd: p.usdCents / p.days })} a day</span>
+      ${save.aud > 0 ? `<span class="pc-stamp">Save ${formatPrice(save)}</span>` : '<span class="pc-stamp plain">Daily rate</span>'}
+    </button>`;
+  }).join('');
+}
+
+/** The hire-length cards in the booking form: one choice, which stays selected and sets the booking's days. */
+function renderDayCards() {
+  $('bkDays').innerHTML = state.cfg.priceList.map((p) => {
+    const label = `${p.days} day${p.days > 1 ? 's' : ''}`;
+    const price = formatPrice({ aud: p.audCents, usd: p.usdCents });
+    const on = p.days === state.days;
+    return `<button type="button" class="postcard mini" role="radio" aria-checked="${on}" tabindex="${on ? 0 : -1}" data-days="${p.days}"
+        data-testid="book-days-${p.days}" data-agent-id="book-days-${p.days}" aria-label="${label}, ${price} before GST">
+      <span class="pc-days">${label}</span><strong class="pc-price">${price}</strong></button>`;
+  }).join('');
+  markDayCards();
+}
+
+/**
+ * Lights up the "How long?" cards up to the hire length; the matching card is the selected one. Once a pickup day is
+ * chosen, lengths that would be returned on a day with no returns are greyed out.
+ */
+function markDayCards() {
+  $('bkDays').querySelectorAll('[data-days]').forEach((card) => {
+    const days = Number(card.dataset.days);
+    const ok = !state.date || lengthOk(state.date, days);
+    card.disabled = !ok;
+    card.title = ok ? '' : `Returns aren't available on ${formatDate(addDays(state.date, days))}`;
+    card.setAttribute('aria-checked', String(days === state.days));
+    card.tabIndex = days === state.days ? 0 : -1;
+    card.classList.toggle('lit', days < state.days);
+  });
+}
+
+const canBook = (date) => ['available', 'partial'].includes(dayStatus(date));
+/** True if every day from `start` for `days` days can be picked on the calendar. */
+const runOpen = (start, days) => Array.from({ length: days }, (_, i) => addDays(start, i)).every(canBook);
+
+/** Pickups and returns only happen on the owner's available days (Pickup days in the admin panel). */
+function handoverOk(date) {
+  const { weekdays, overrides } = state.cfg.handover;
+  return date in overrides ? overrides[date] : weekdays.includes(new Date(`${date}T00:00:00Z`).getUTCDay());
+}
+
+/** A hire of `days` from `start` works if every day is free and it's picked up and returned on available days. */
+const lengthOk = (start, days) => runOpen(start, days) && handoverOk(start) && handoverOk(addDays(start, days));
+const validLengths = (start) => Array.from({ length: state.cfg.maxRentalDays }, (_, i) => i + 1).filter((d) => lengthOk(start, d));
+
+function calNote(text) {
+  $('calNote').textContent = text;
+  $('calNote').hidden = !text;
+}
+
+/**
+ * Calendar clicks choose up to maxRentalDays days in a row. The first day picked is the pickup day. Clicking a later day
+ * (or a day inside the run) makes the hire end on that day; clicking anywhere else starts a new hire from that day.
+ * The van is returned the day after the last day, at the pickup time.
+ */
+function pickCalendarDay(date) {
+  const offset = state.date ? dayDiff(state.date, date) : -1;
+  if (offset >= 0 && offset < state.cfg.maxRentalDays && runOpen(state.date, offset + 1)) {
+    const days = offset + 1;
+    const back = addDays(state.date, days);
+    if (!handoverOk(back)) return calNote(`That hire would be returned on ${formatDate(back)}, which has no returns. Try a shorter or longer hire.`);
+    calNote('');
+    if (days !== state.days) setDays(days);
+    return;
+  }
+  startHire(date);
+}
+
+/** A new pickup day keeps a length already chosen on the cards if it works there; otherwise the shortest hire that does. */
+function startHire(date) {
+  const refuse = (text) => {
+    calNote(text);
+    $('bkDate').value = state.date || '';
+  };
+  if (!handoverOk(date)) return refuse(`Pickups aren't available on ${formatDate(date)}. Striped days have no pickups or returns.`);
+  const lengths = validLengths(date);
+  if (!lengths.length) return refuse(`There's no return day within ${state.cfg.maxRentalDays} days of ${formatDate(date)}. Please choose another pickup day.`);
+  const keep = !state.date && lengths.includes(state.days);
+  const days = keep ? state.days : lengths[0];
+  calNote(days > 1 && !keep ? `The shortest hire from ${formatDate(date)} is ${days} days, returned ${formatDate(addDays(date, days))}.` : '');
+  if (days !== state.days) setDays(days);
+  selectDate(date);
+}
+
+/** A hire length chosen on a card, if it works from the chosen pickup day. */
+function chooseDays(days) {
+  if (state.date && !lengthOk(state.date, days)) {
+    return calNote(`A ${days}-day hire from ${formatDate(state.date)} isn't available: it would be returned on ${formatDate(addDays(state.date, days))}, which has no returns.`);
+  }
+  calNote('');
+  return setDays(days);
+}
+
+async function setDays(days) {
+  state.days = days;
+  $('pxCards').querySelectorAll('[data-days]').forEach((card) => card.setAttribute('aria-pressed', String(Number(card.dataset.days) === days)));
+  markDayCards();
+  renderCalendar();
+  renderTimes();
+  await loadQuote();
+  renderAuthPanel();
 }
 
 function renderAuthPanel() {
@@ -244,6 +354,7 @@ function selectDate(date) {
   const after = monthChanged ? loadBusy() : Promise.resolve();
   after.then(() => {
     renderCalendar();
+    markDayCards();
     renderTimes();
   });
 }
@@ -385,16 +496,16 @@ async function init() {
   const [cfg, me] = await Promise.all([getConfig(), getMe()]);
   state.cfg = cfg;
   state.me = me;
+  // A booking started before signing up resumes with the same hire length.
+  const pending = JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null');
+  if (pending?.days) state.days = Math.min(Number(pending.days), cfg.maxRentalDays);
   renderPricing();
+  renderDayCards();
 
   const [ty, tm] = cfg.today.split('-').map(Number);
   state.month = { y: ty, m: tm - 1 };
   $('bkDate').min = cfg.today;
   $('bkDate').max = addDays(cfg.today, cfg.maxAdvanceDays);
-
-  const pending = JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null');
-  if (pending?.days) state.days = Math.min(Number(pending.days), cfg.maxRentalDays);
-  renderDaysSelect();
 
   await Promise.all([loadBusy(), loadQuote()]);
   renderCalendar();
@@ -411,20 +522,35 @@ async function init() {
   $('calNext').addEventListener('click', () => changeMonth(1));
   $('calendar').addEventListener('click', (e) => {
     const btn = e.target.closest('.cal-day');
-    if (btn && !btn.disabled) selectDate(btn.dataset.date);
+    if (btn && !btn.disabled) pickCalendarDay(btn.dataset.date);
   });
-  $('bkDate').addEventListener('change', (e) => e.target.value && selectDate(e.target.value));
+  $('bkDate').addEventListener('change', (e) => e.target.value && startHire(e.target.value));
   $('bkTime').addEventListener('change', (e) => { state.time = e.target.value; renderReturn(); });
-  $('bkDays').addEventListener('change', async (e) => {
-    state.days = Number(e.target.value);
-    renderTimes();
-    await loadQuote();
-    renderAuthPanel();
+  $('bkDays').addEventListener('click', (e) => {
+    const card = e.target.closest('[data-days]');
+    if (card && !card.disabled) chooseDays(Number(card.dataset.days));
+  });
+  // Arrow keys move between the hire lengths that are available, like any other set of options.
+  $('bkDays').addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    let days = state.days + step;
+    while (days >= 1 && days <= state.cfg.maxRentalDays && state.date && !lengthOk(state.date, days)) days += step;
+    if (days < 1 || days > state.cfg.maxRentalDays) return;
+    setDays(days).then(() => $('bkDays').querySelector(`[data-days="${days}"]`)?.focus());
+  });
+  $('pxCards').addEventListener('click', (e) => {
+    const card = e.target.closest('[data-days]');
+    if (!card) return;
+    chooseDays(Number(card.dataset.days));
+    document.getElementById('book').scrollIntoView();
   });
   $('bookingForm').addEventListener('submit', submitBooking);
   $('checklist').addEventListener('click', (e) => { if (e.target.id === 'bkCheckLocation') checkLocation(); });
   window.addEventListener('kangoo:prefs', () => {
     renderPricing();
+    renderDayCards();
     renderQuote();
     renderTimes();
     loadHub();

@@ -1,5 +1,5 @@
 import {
-  api, getMe, formatAud, formatUsd, formatTokens, formatRate, formatDateTime, formatStamp, toast, showError,
+  api, getMe, formatAud, formatUsd, formatTokens, formatRate, formatDate, formatDateTime, formatStamp, toast, showError,
   escapeHtml,
 } from './common.js';
 
@@ -20,7 +20,7 @@ const loaders = {
   bookings: loadBookings,
   customers: () => loadCustomers(),
   messages: loadThreads,
-  calendar: loadBlocks,
+  handover: loadHandover,
   pricing: loadPricing,
   settings: loadSettings,
   staff: loadStaff,
@@ -28,6 +28,7 @@ const loaders = {
 };
 
 function showTab(name) {
+  if (name === 'calendar') name = 'handover';
   if (!loaders[name]) name = 'dashboard';
   document.querySelectorAll('[role="tab"]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
   document.querySelectorAll('.tab-panel').forEach((p) => { p.hidden = p.dataset.panel !== name; });
@@ -196,15 +197,119 @@ async function openThread(userId, quiet = false) {
   if (!quiet) loadThreads();
 }
 
-/* ---------- Calendar blocks ---------- */
+/* ---------- Pickup and return days ---------- */
 
-async function loadBlocks() {
-  const { blocks } = await api('/admin/blocks');
-  $('blockList').innerHTML = blocks.length ? `<table class="table">
-    <thead><tr><th>From</th><th>To</th><th>Reason</th><th></th></tr></thead>
-    <tbody>${blocks.map((b) => `<tr><td>${escapeHtml(b.startDate)}</td><td>${escapeHtml(b.endDate)}</td>
-      <td>${escapeHtml(b.reason || '')}</td><td><button class="btn btn-small btn-ghost" data-unblock="${b.id}">Remove</button></td></tr>`).join('')}
-    </tbody></table>` : '<p class="hint">No dates blocked.</p>';
+const WEEKDAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
+let ho = null; // { weekdays: Set, overrides: Map(date -> open), today }
+let hoMonth = null; // { y, m } (m: 0-11)
+let hoTimer = null;
+let hoSeq = 0; // the latest change; an older save's response doesn't overwrite newer clicks
+
+const weekdayOf = (date) => new Date(`${date}T00:00:00Z`).getUTCDay();
+const usuallyOpen = (date) => ho.weekdays.has(weekdayOf(date));
+const hoOpen = (date) => (ho.overrides.has(date) ? ho.overrides.get(date) : usuallyOpen(date));
+
+function applyHandover(view) {
+  ho = { weekdays: new Set(view.weekdays), overrides: new Map(Object.entries(view.overrides)), today: view.today };
+  renderHandoverConflicts(view.conflicts);
+}
+
+async function loadHandover() {
+  applyHandover(await api('/admin/handover'));
+  if (!hoMonth) {
+    const [y, m] = ho.today.split('-').map(Number);
+    hoMonth = { y, m: m - 1 };
+  }
+  $('hoReadonly').hidden = superadmin;
+  renderHandover();
+}
+
+function renderHandover() {
+  $('hoWeekdays').innerHTML = WEEKDAYS.map(([d, label]) => `<button type="button" class="day-toggle" data-weekday="${d}"
+    aria-pressed="${ho.weekdays.has(d)}" ${superadmin ? '' : 'disabled'} data-testid="ho-weekday-${d}" data-agent-id="ho-weekday-${d}">${label}</button>`).join('');
+
+  const { y, m } = hoMonth;
+  $('hoTitle').textContent = new Date(Date.UTC(y, m, 1)).toLocaleDateString('en-AU', { timeZone: 'UTC', month: 'long', year: 'numeric' });
+  const firstDow = (new Date(Date.UTC(y, m, 1)).getUTCDay() + 6) % 7; // Monday first
+  const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const cells = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => `<div class="cal-dow" role="columnheader">${d}</div>`);
+  for (let i = 0; i < firstDow; i++) cells.push('<div class="cal-empty"></div>');
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const past = date < ho.today;
+    const open = hoOpen(date);
+    const changed = ho.overrides.has(date);
+    const state = open ? 'pickups and returns' : 'not available';
+    cells.push(`<button type="button" role="gridcell" class="cal-day ${past ? 'past' : open ? 'available' : 'closed'}${changed ? ' changed' : ''}"
+      data-date="${date}" aria-pressed="${open}" ${past || !superadmin ? 'disabled' : ''} data-testid="ho-${date}" data-agent-id="ho-${date}"
+      aria-label="${date}: ${state}${changed ? ', changed from your usual week' : ''}">${d}</button>`);
+  }
+  $('hoCalendar').innerHTML = cells.join('');
+  const [ty, tm] = ho.today.split('-').map(Number);
+  $('hoPrev').disabled = y === ty && m === tm - 1;
+}
+
+function renderHandoverConflicts(conflicts) {
+  const day = (date, ok) => `${formatDate(date)}${ok ? '' : ' <strong>(not available)</strong>'}`;
+  $('hoConflicts').innerHTML = conflicts.length ? `<div class="notice" role="alert">
+    <p><strong>Check these bookings.</strong> They pick up or return on a day that isn't available any more. Contact the customer,
+      or make the day available again.</p>
+    <ul>${conflicts.map((b) => `<li>${escapeHtml(b.ref)} · ${escapeHtml(b.name || '')} · pickup ${day(b.pickup, b.pickupOk)}
+      · return ${day(b.dropoff, b.dropoffOk)}</li>`).join('')}</ul></div>` : '';
+}
+
+/** Saves shortly after the last click, so several quick clicks become one save. */
+function saveHandoverSoon() {
+  const seq = ++hoSeq;
+  $('hoStatus').textContent = 'Saving…';
+  clearTimeout(hoTimer);
+  hoTimer = setTimeout(async () => {
+    try {
+      const view = await api('/admin/handover', {
+        method: 'PUT',
+        body: { weekdays: [...ho.weekdays], overrides: Object.fromEntries(ho.overrides) },
+      });
+      if (seq !== hoSeq) return;
+      applyHandover(view);
+      renderHandover();
+      $('hoStatus').textContent = 'Saved. Customers see the change straight away.';
+    } catch (err) {
+      $('hoStatus').textContent = '';
+      toast(err.message, 'error');
+      loadHandover();
+    }
+  }, 500);
+}
+
+function bindHandover() {
+  $('hoWeekdays').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-weekday]');
+    if (!btn || btn.disabled) return;
+    const d = Number(btn.dataset.weekday);
+    if (ho.weekdays.has(d)) ho.weekdays.delete(d);
+    else ho.weekdays.add(d);
+    // Date changes that now match the usual week aren't changes any more.
+    for (const [date, open] of ho.overrides) if (weekdayOf(date) === d && open === usuallyOpen(date)) ho.overrides.delete(date);
+    renderHandover();
+    saveHandoverSoon();
+  });
+  $('hoCalendar').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-date]');
+    if (!btn || btn.disabled) return;
+    const date = btn.dataset.date;
+    const open = !hoOpen(date);
+    if (open === usuallyOpen(date)) ho.overrides.delete(date);
+    else ho.overrides.set(date, open);
+    renderHandover();
+    saveHandoverSoon();
+  });
+  const changeMonth = (delta) => {
+    const t = new Date(Date.UTC(hoMonth.y, hoMonth.m + delta, 1));
+    hoMonth = { y: t.getUTCFullYear(), m: t.getUTCMonth() };
+    renderHandover();
+  };
+  $('hoPrev').addEventListener('click', () => changeMonth(-1));
+  $('hoNext').addEventListener('click', () => changeMonth(1));
 }
 
 /* ---------- Pricing & currency ---------- */
@@ -216,7 +321,7 @@ function pricingFormValues() {
   const form = $('pricingForm');
   return {
     price_basis: form.price_basis.value,
-    daily_rate_aud_cents: Math.round(Number($('pAud').value) * 100),
+    price_table: [...document.querySelectorAll('#pList input')].map((el) => el.value).join(','),
     daily_rate_token_cents: Math.round(Number($('pTok').value) * 100),
     gst_rate_bp: Math.round(Number($('pGst').value) * 100),
     fx_mode: form.fx_mode.value,
@@ -225,7 +330,12 @@ function pricingFormValues() {
   };
 }
 
-function renderCalc({ fx, dailyQuote: q }) {
+function renderCalc({ fx, dailyQuote: q, list }) {
+  // Each price-list line shows what a customer pays for that hire length.
+  list.forEach((lq, i) => {
+    const out = document.getElementById(`pListOut${i + 1}`);
+    if (out) out.textContent = `= ${formatAud(lq.totalCents)} inc GST · ${formatTokens(lq.tokenCents)} tokens`;
+  });
   const rate = formatRate(fx.rate);
   const gstPct = (q.gstRateBp / 100).toString();
   const steps = q.priceBasis === 'aud'
@@ -251,8 +361,14 @@ function renderPricing(view) {
   const form = $('pricingForm');
   form.price_basis.value = s.price_basis;
   form.fx_mode.value = s.fx_mode;
-  $('pAud').value = (Number(s.daily_rate_aud_cents) / 100).toFixed(2);
-  $('pTok').value = (Number(s.daily_rate_token_cents) / 100).toFixed(2);
+  $('pList').innerHTML = String(s.price_table).split(',').map((price, i) => `
+    <div class="price-list-row">
+      <label for="pList${i + 1}">${i + 1} day${i ? 's' : ''}</label>
+      <span class="price-input"><span aria-hidden="true">A$</span><input id="pList${i + 1}" type="number" min="1" step="1" required value="${Number(price)}"
+        data-testid="price-list-${i + 1}" data-agent-id="price-list-${i + 1}" aria-label="Price for ${i + 1} day${i ? 's' : ''}, whole AUD before GST"></span>
+      <output id="pListOut${i + 1}" class="hint"></output>
+    </div>`).join('');
+  $('pTok').value = Math.floor(Number(s.daily_rate_token_cents) / 100);
   $('pGst').value = Number(s.gst_rate_bp) / 100;
   $('pManual').value = s.fx_manual_rate;
   $('pPacks').value = s.token_packs;
@@ -266,7 +382,6 @@ function renderPricing(view) {
 
 function toggleBasisFields() {
   const basis = $('pricingForm').price_basis.value;
-  $('audRateField').classList.toggle('inactive', basis !== 'aud');
   $('tokenRateField').classList.toggle('inactive', basis !== 'tokens');
 }
 
@@ -382,12 +497,6 @@ function bindEvents() {
       const thread = t.closest('[data-thread]');
       if (thread) return await openThread(thread.dataset.thread);
 
-      const unblock = t.closest('[data-unblock]');
-      if (unblock) {
-        await api(`/admin/blocks/${unblock.dataset.unblock}`, { method: 'DELETE' });
-        return loadBlocks();
-      }
-
       const staff = t.closest('[data-staff]');
       if (staff) {
         await api(`/admin/staff/${staff.dataset.staff}/disabled`, { method: 'POST', body: { disabled: staff.dataset.disable === 'true' } });
@@ -435,17 +544,6 @@ function bindEvents() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       $('adminChatForm').requestSubmit();
-    }
-  });
-
-  $('blockForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      await api('/admin/blocks', { method: 'POST', body: { startDate: $('blkStart').value, endDate: $('blkEnd').value, reason: $('blkReason').value } });
-      e.target.reset();
-      loadBlocks();
-    } catch (err) {
-      toast(err.message, 'error');
     }
   });
 
@@ -511,6 +609,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('adminRole').textContent = superadmin ? 'Superadmin' : 'Admin';
   document.querySelectorAll('[data-super]').forEach((el) => { el.hidden = !superadmin; });
   bindEvents();
+  bindHandover();
   api('/admin/settings').then((v) => { $('hdrFx').textContent = `US$1 = A$${formatRate(v.fx.rate)}`; }).catch(() => {});
   showTab(location.hash.slice(1) || 'dashboard');
   window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));

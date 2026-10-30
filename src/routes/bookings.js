@@ -6,7 +6,7 @@ import { checkServiceArea } from './auth.js';
 import { currentRate } from '../fx.js';
 import { config } from '../config.js';
 import {
-  quote, brisbaneTime, brisbaneToday, addDays, bookingRef, int, validDate, str, DAY,
+  quote, maxRentalDays, priceTable, handoverRules, isHandoverDay, dayLabel, brisbaneTime, brisbaneToday, addDays, bookingRef, int, validDate, str, DAY,
 } from '../util.js';
 
 export const router = Router();
@@ -18,12 +18,16 @@ export function publicConfig(settings) {
   return {
     businessName: settings.business_name,
     priceBasis: settings.price_basis,
-    dailyRateAudCents: num(settings, 'daily_rate_aud_cents'),
+    dailyRateAudCents: priceTable(settings)[0] * 100,
     dailyRateTokenCents: num(settings, 'daily_rate_token_cents'),
     gstRateBp: num(settings, 'gst_rate_bp'),
     fx,
     dailyQuote: quote(settings, 1, fx.rate),
-    multidayDiscount: { stepBp: num(settings, 'multiday_discount_step_bp'), maxBp: num(settings, 'multiday_discount_max_bp') },
+    // Price for each hire length, before GST, in both currencies (USD = tokens).
+    priceList: Array.from({ length: maxRentalDays(settings) }, (_, i) => {
+      const q = quote(settings, i + 1, fx.rate);
+      return { days: i + 1, audCents: q.subtotalCents, usdCents: q.subtotalTokenCents };
+    }),
     tokenPacks: settings.token_packs.split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0),
     minDriverAge: num(settings, 'min_driver_age'),
     bookingRadiusKm: num(settings, 'registration_radius_km'),
@@ -31,7 +35,8 @@ export function publicConfig(settings) {
     cancellationHours: num(settings, 'cancellation_hours'),
     bufferHours: num(settings, 'buffer_hours'),
     minNoticeHours: num(settings, 'min_notice_hours'),
-    maxRentalDays: num(settings, 'max_rental_days'),
+    maxRentalDays: maxRentalDays(settings),
+    handover: handoverRules(settings),
     maxAdvanceDays: num(settings, 'max_advance_days'),
     firstPickupHour: num(settings, 'first_pickup_hour'),
     lastPickupHour: num(settings, 'last_pickup_hour'),
@@ -75,13 +80,13 @@ router.get('/availability', async (req, res) => {
   if (to < from || Date.parse(to) - Date.parse(from) > 120 * DAY) throw new HttpError(400, 'Date range is too large.');
   const settings = await getSettings();
   // Include a tail so multi-day rentals starting late in the range can be checked in the browser.
-  const ranges = await busyRanges(brisbaneTime(from), brisbaneTime(addDays(to, num(settings, 'max_rental_days') + 1)), settings);
+  const ranges = await busyRanges(brisbaneTime(from), brisbaneTime(addDays(to, maxRentalDays(settings) + 1)), settings);
   res.json({ busy: ranges });
 });
 
 router.get('/quote', async (req, res) => {
   const settings = await getSettings();
-  const days = int(req.query.days ?? 1, { field: 'Days', min: 1, max: num(settings, 'max_rental_days') });
+  const days = int(req.query.days ?? 1, { field: 'Days', min: 1, max: maxRentalDays(settings) });
   res.json(quote(settings, days, currentRate(settings).rate));
 });
 
@@ -118,9 +123,18 @@ router.post('/bookings', requireUser, async (req, res) => {
   const b = req.body || {};
   const date = validDate(b.date, 'Pickup date');
   const time = str(b.time, { field: 'Pickup time', pattern: /^\d{2}:00$/, max: 5 });
-  const days = int(b.days, { field: 'Number of days', min: 1, max: num(settings, 'max_rental_days') });
+  const days = int(b.days, { field: 'Number of days', min: 1, max: maxRentalDays(settings) });
   const note = str(b.note, { field: 'Note', required: false, max: 500 });
   if (b.acceptDisclaimer !== true) throw new HttpError(400, 'You must accept the rental disclaimer and insurance requirements.');
+  // The van can only be picked up and returned on the owner's available days (set by the superadmin).
+  const handover = handoverRules(settings);
+  const returnDate = addDays(date, days);
+  if (!isHandoverDay(handover, date)) {
+    throw new HttpError(400, `Pickups aren't available on ${dayLabel(date)}. Please choose another pickup day.`);
+  }
+  if (!isHandoverDay(handover, returnDate)) {
+    throw new HttpError(400, `Returns aren't available on ${dayLabel(returnDate)}. Please choose a hire length that's returned on another day.`);
+  }
   // Anyone can register, but bookings are only for people near the depot: the browser sends its location with every booking.
   const area = checkServiceArea(b.lat, b.lng, settings);
   if (!area.inArea) {

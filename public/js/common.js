@@ -47,8 +47,8 @@ export const isStaff = (user) => user && (user.role === 'admin' || user.role ===
 
 /* ---------- Formatting ---------- */
 
-// Every dollar and token amount is shown as a whole number, rounded up. Exchange rates keep their decimals.
-const whole = (cents) => Math.ceil(cents / 100 - 1e-9) || 0; // `|| 0` turns -0 into 0
+// Every dollar and token amount is shown as a whole number, rounded down. Exchange rates keep their decimals.
+const whole = (cents) => Math.floor(cents / 100 + 1e-9) || 0; // `|| 0` turns -0 into 0
 export const formatAud = (cents) => `A$${whole(cents).toLocaleString('en-AU')}`;
 export const formatUsd = (cents) => `US$${whole(cents).toLocaleString('en-US')}`;
 export const formatTokens = (tokenCents) => whole(tokenCents).toLocaleString('en-AU');

@@ -160,9 +160,29 @@ legend { font-weight: 700; padding: 0 .4rem; }
 .cal-day:disabled { cursor: default; }
 .cal-day.today::after { content: ""; position: absolute; bottom: 5px; left: 50%; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: currentColor; }
 .cal-day.selected { outline: 3px solid var(--blue); outline-offset: 1px; background: var(--blue); color: #fff; border-color: var(--blue); }
+.cal-day.in-range { background: #dbe6ff; border-color: var(--blue); color: var(--blue-dark); }
+/* Free days with no pickups or returns (the owner is working): striped. The hire's return day: dashed outline. */
+.cal-day.nohandover { background: repeating-linear-gradient(135deg, #fff 0 6px, #eef7f1 6px 11px); border-color: #cfe9d8; color: #4f7a5f; }
+.cal-day.return-day { outline: 2px dashed var(--blue); outline-offset: 2px; }
+.cal-day.nohandover.in-range { background: repeating-linear-gradient(135deg, #dbe6ff 0 6px, #c9d9fb 6px 11px); border-color: var(--blue); color: var(--blue-dark); }
+.cal-note { margin: .85rem 0 0; padding: .55rem .75rem; border-radius: 9px; background: var(--wait-bg); color: var(--wait); font-size: .88rem; }
+.postcard:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+/* Admin "Pickup days" calendar */
+.cal-day.closed { background: #eceef2; border-color: #d5d9e0; color: #6b7385; }
+.cal-day.changed::before { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+.ho-card { max-width: 520px; margin-top: 1rem; }
+.weekday-toggles { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
+.day-toggle { min-width: 3.4rem; padding: .45rem .7rem; border: 1px solid var(--line); border-radius: 999px; background: #fff; font: inherit; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+.day-toggle[aria-pressed="true"] { background: var(--ok-bg); border-color: #bfe5cd; color: var(--ok); }
+.day-toggle:disabled { cursor: default; opacity: .7; }
+.notice { margin-top: 1rem; padding: .85rem 1rem; border-radius: 10px; background: var(--wait-bg); color: var(--wait); }
+.notice p { margin: 0 0 .4rem; }
+.notice ul { margin: 0; padding-left: 1.2rem; }
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: .4rem 1rem; padding: 0; margin: 1rem 0 0; font-size: .82rem; color: var(--ink-2); }
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: .35rem; vertical-align: -1px; }
-.dot.available { background: #bfe5cd; } .dot.partial { background: #f1d58f; } .dot.booked { background: #f5c6c1; } .dot.blocked { background: #d5d9e0; }
+.dot.chosen { background: var(--blue); } .dot.closed { background: #d5d9e0; } .dot.changed { background: var(--blue); border-radius: 50%; }
+.dot.nohandover { background: repeating-linear-gradient(135deg, #fff 0 3px, #cfe9d8 3px 5px); border: 1px solid #bfe5cd; }
+.dot.return { border: 2px dashed var(--blue); background: #fff; } .dot.available { background: #bfe5cd; } .dot.partial { background: #f1d58f; } .dot.booked { background: #f5c6c1; } .dot.blocked { background: #d5d9e0; }
 
 .quote { margin: 1rem 0 .5rem; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .quote div { display: flex; justify-content: space-between; padding: .55rem .9rem; border-bottom: 1px solid var(--line); }
@@ -191,11 +211,44 @@ legend { font-weight: 700; padding: 0 .4rem; }
 .steps-4 { grid-template-columns: repeat(4, 1fr); }
 .step-num { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--blue); color: #fff; font-weight: 800; margin-bottom: .8rem; }
 .step p { color: var(--ink-2); margin: 0; }
-.price-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
-.price-stats .card { display: flex; flex-direction: column; gap: .2rem; }
-.price-stats strong { font-size: 1.7rem; letter-spacing: -.01em; }
-.price-stats span { color: var(--ink-2); }
-.price-note { margin: 1.25rem 0 0; font-weight: 600; color: var(--ok); }
+/* "Hire for longer and save" sits just above "Book the van". */
+.section-save { padding-bottom: 0; }
+.section-save + .section { padding-top: clamp(2rem, 4vw, 3rem); }
+.price-cards-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; margin: 0 0 .9rem; }
+.price-cards-head h2 { margin: 0; font-size: 1.25rem; }
+.price-cards-head .hint { margin: 0; }
+.price-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .9rem; }
+.postcard { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; padding: 1.05rem 1rem .95rem; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); font: inherit; color: var(--ink); text-align: left; cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.postcard:hover { transform: translateY(-2px); border-color: #b9c8ee; }
+.postcard[aria-pressed="true"] { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue), var(--shadow); }
+.pc-days { font-size: .76rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
+.pc-price { margin-top: .3rem; font-size: 1.65rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.1; }
+.pc-sub { font-size: .8rem; color: var(--ink-2); }
+.pc-stamp { margin-top: .6rem; padding: .14rem .45rem; border: 1.5px dashed var(--ok); border-radius: 5px; background: var(--ok-bg); color: var(--ok); font-size: .72rem; font-weight: 800; transform: rotate(-2deg); }
+.pc-stamp.plain { border-color: #c8cfdb; background: var(--bg-alt); color: var(--ink-2); transform: none; }
+.pc-ribbon { position: absolute; top: -.62rem; left: .85rem; padding: .1rem .5rem; border-radius: 999px; background: var(--blue); color: #fff; font-size: .68rem; font-weight: 800; letter-spacing: .02em; }
+.postcard.best { border-color: #b9c8ee; }
+.postcard.lit { background: #eef3ff; border-color: #c5d5fb; }
+.postcard[aria-checked="true"] { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue); background: #f3f7ff; }
+.day-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; }
+@media (max-width: 359px) { .day-cards { grid-template-columns: repeat(3, 1fr); } }
+.postcard.mini { gap: 0; padding: .55rem .65rem; border-radius: 10px; box-shadow: none; }
+.postcard.mini .pc-days { font-size: .68rem; }
+.postcard.mini .pc-price { margin-top: .1rem; font-size: 1.1rem; }
+/* The chosen length is solid blue, like the first and last days of the hire on the calendar. */
+.day-cards .postcard[aria-checked="true"] { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: 0 0 0 2px #bcd0ff; }
+.day-cards .postcard[aria-checked="true"] .pc-days { color: #dbe6ff; }
+
+.price-list-edit { display: grid; gap: .45rem; }
+.price-list-row { display: grid; grid-template-columns: 4.5rem 9rem 1fr; align-items: center; gap: .75rem; }
+.price-list-row label { font-weight: 600; }
+.price-input { display: flex; align-items: center; gap: .35rem; }
+.price-input input { padding: .45rem .6rem; }
+.price-list-row output { margin: 0; }
+@media (max-width: 560px) {
+  .price-list-row { grid-template-columns: 4.5rem 1fr; }
+  .price-list-row output { grid-column: 2; }
+}
 .van-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 2.5rem; align-items: center; }
 .van-photo img { border-radius: 20px; }
 .feature-list { padding-left: 1.2rem; }
@@ -412,7 +465,7 @@ html:has(.locale-dialog[open]) { overflow: hidden; }
   .site-nav { display: none; position: absolute; top: 68px; left: 0; right: 0; flex-direction: column; align-items: flex-start; background: #fff; padding: 1rem 1.25rem 1.25rem; border-bottom: 1px solid var(--line); box-shadow: var(--shadow); }
   .site-nav.open { display: flex; }
   .nav-auth { flex-direction: column; align-items: flex-start; }
-  .steps, .steps-4, .price-stats { grid-template-columns: 1fr; }
+  .steps, .steps-4 { grid-template-columns: 1fr; }
   .tab-panel { padding: 1.25rem; }
   .form-card { padding: 1.4rem; }
   .bubble { max-width: 90%; }

@@ -131,45 +131,50 @@ await step('superadmin logs in and sets a fixed manual exchange rate', async () 
   assert.equal((await admin.api('/auth/login', { method: 'POST', body: ADMIN })).status, 200);
   const { status, data } = await admin.api('/admin/settings', {
     method: 'PUT',
-    body: { settings: { price_basis: 'aud', daily_rate_aud_cents: 9000, gst_rate_bp: 1000, fx_mode: 'manual', fx_manual_rate: '1.43' } },
+    body: { settings: { price_basis: 'aud', price_table: '90,165,230,280,315,340,350', gst_rate_bp: 1000, fx_mode: 'manual', fx_manual_rate: '1.43' } },
   });
   assert.equal(status, 200, JSON.stringify(data));
   assert.equal(data.fx.rate, 1.43);
 });
 
-await step('AUD basis: A$90 + GST at 1.43 = A$99 = 70 tokens (69.23 rounded up)', async () => {
+await step('AUD basis: A$90 + GST at 1.43 = A$99 = 69 tokens (69.23 rounded down)', async () => {
   const { data: q } = await customer.api('/quote?days=1');
   assert.equal(q.subtotalCents, 9000);
-  assert.equal(q.subtotalTokenCents, 6300); // A$90 / 1.43 = 62.94 -> 63 tokens ex GST
+  assert.equal(q.subtotalTokenCents, 6200); // A$90 / 1.43 = 62.94 -> 62 tokens ex GST
   assert.equal(q.gstCents, 900);
   assert.equal(q.totalCents, 9900);
-  assert.equal(q.tokenCents, 7000); // A$99 / 1.43 = 69.23 -> 70 tokens
+  assert.equal(q.tokenCents, 6900); // A$99 / 1.43 = 69.23 -> 69 tokens
   assert.equal(q.discountCents, 0);
 });
 
-await step('multi-day discount: 10/20/30/40% off days 2-5, day-5 price after that; whole amounts rounded up', async () => {
-  const two = (await customer.api('/quote?days=2')).data; // 90 + 81 = 171, GST 17.10 -> 18
-  assert.deepEqual([two.listSubtotalCents, two.discountCents, two.subtotalCents, two.gstCents, two.totalCents, two.tokenCents], [18000, 900, 17100, 1800, 18900, 13300]);
-  const five = (await customer.api('/quote?days=5')).data; // 90 + 81 + 72 + 63 + 54 = 360
-  assert.deepEqual([five.listSubtotalCents, five.discountCents, five.subtotalCents, five.gstCents, five.totalCents, five.tokenCents], [45000, 9000, 36000, 3600, 39600, 27700]);
-  const seven = (await customer.api('/quote?days=7')).data; // days 6 and 7 stay at A$54
-  assert.equal(seven.subtotalCents, 46800);
+await step('price list: 1-7 days A$90/165/230/280/315/340/350 ex GST, up to 7 days; whole amounts rounded down', async () => {
+  const { data: cfg } = await customer.api('/config');
+  assert.equal(cfg.maxRentalDays, 7);
+  assert.deepEqual(cfg.priceList.map((p) => p.audCents), [9000, 16500, 23000, 28000, 31500, 34000, 35000]);
+  const two = (await customer.api('/quote?days=2')).data; // A$165, GST 16.50 -> 16, A$181 / 1.43 = 126.57 -> 126 tokens
+  assert.deepEqual([two.listSubtotalCents, two.discountCents, two.subtotalCents, two.gstCents, two.totalCents, two.tokenCents], [18000, 1500, 16500, 1600, 18100, 12600]);
+  const five = (await customer.api('/quote?days=5')).data; // A$315, GST 31.50 -> 31, A$346 / 1.43 = 241.96 -> 241 tokens
+  assert.deepEqual([five.listSubtotalCents, five.discountCents, five.subtotalCents, five.gstCents, five.totalCents, five.tokenCents], [45000, 13500, 31500, 3100, 34600, 24100]);
+  const seven = (await customer.api('/quote?days=7')).data; // A$350 + A$35 GST = A$385 -> 269 tokens
+  assert.deepEqual([seven.subtotalCents, seven.totalCents, seven.tokenCents], [35000, 38500, 26900]);
+  assert.equal((await customer.api('/quote?days=8')).status, 400);
   for (const q of [two, five, seven]) {
     for (const k of ['listSubtotalCents', 'discountCents', 'subtotalCents', 'gstCents', 'totalCents', 'tokenCents', 'subtotalTokenCents']) assert.equal(q[k] % 100, 0, k);
   }
 });
 
-await step('token basis: 62 tokens -> 62 x 1.43 = A$88.66 -> A$89 + A$9 GST = A$98 = 69 tokens', async () => {
+await step('token basis: 62 tokens -> 62 x 1.43 = A$88.66 -> A$88 + A$8 GST = A$96 = 67 tokens', async () => {
   await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_basis: 'tokens', daily_rate_token_cents: 6200 } } });
   const { data: q } = await customer.api('/quote?days=1');
-  assert.equal(q.subtotalCents, 8900);
-  assert.equal(q.gstCents, 900);
-  assert.equal(q.totalCents, 9800);
-  assert.equal(q.tokenCents, 6900);
+  assert.equal(q.subtotalCents, 8800);
+  assert.equal(q.gstCents, 800);
+  assert.equal(q.totalCents, 9600);
+  assert.equal(q.tokenCents, 6700);
   await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_basis: 'aud' } } });
-  // Prices entered with cents are rounded up to whole dollars.
-  const preview = await admin.api('/admin/pricing/preview', { method: 'POST', body: { settings: { daily_rate_aud_cents: 9050 } } });
-  assert.equal(preview.data.dailyQuote.subtotalCents, 9100);
+  // Price-list prices entered with cents are rounded down to whole dollars; a longer hire can't cost less.
+  const preview = await admin.api('/admin/pricing/preview', { method: 'POST', body: { settings: { price_table: '90.5,165.99,230,280,315,340,350' } } });
+  assert.deepEqual(preview.data.list.map((q) => q.subtotalCents).slice(0, 2), [9000, 16500]);
+  assert.equal((await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_table: '90,80' } } })).status, 400);
 });
 
 await step('booking is blocked until the licence is verified', async () => {
@@ -212,14 +217,14 @@ await step('booking needs the device location, within 50 km of the depot', async
   assert.match(far.data.error, /within 50 km/);
 });
 
-await step('customer books 24 hours for 70 tokens', async () => {
+await step('customer books 24 hours for 69 tokens', async () => {
   const { status, data } = await customer.api('/bookings', { method: 'POST', body: { date: plusDays(4), time: '10:00', days: 1, acceptDisclaimer: true, ...BRISBANE, note: 'Moving boxes' } });
   assert.equal(status, 201, JSON.stringify(data));
   bookingId = data.booking.id;
-  assert.equal(data.booking.tokenCents, 7000);
+  assert.equal(data.booking.tokenCents, 6900);
   assert.equal(data.booking.totalCents, 9900);
   const me = await customer.api('/me');
-  assert.equal(me.data.user.tokenCents, 0);
+  assert.equal(me.data.user.tokenCents, 100);
 });
 
 await step('overlapping booking is refused and shows on the calendar', async () => {
@@ -236,6 +241,34 @@ await step('two simultaneous bookings for the same slot: exactly one succeeds', 
   const body = { date: plusDays(9), time: '09:00', days: 1, acceptDisclaimer: true, ...BRISBANE };
   const results = await Promise.all([customer.api('/bookings', { method: 'POST', body }), customer.api('/bookings', { method: 'POST', body })]);
   assert.deepEqual(results.map((r) => r.status).sort(), [201, 409]);
+});
+
+await step('superadmin sets pickup/return days; bookings must start and end on one', async () => {
+  const pickup = plusDays(12);
+  const body = (days, date = pickup) => ({ date, time: '10:00', days, acceptDisclaimer: true, ...BRISBANE });
+  assert.equal((await customer.api('/admin/handover', { method: 'PUT', body: { weekdays: [], overrides: {} } })).status, 403);
+  try {
+    // No usual days: only the pickup day and the day two days later are open.
+    const open = { [pickup]: true, [plusDays(14)]: true };
+    const set = await admin.api('/admin/handover', { method: 'PUT', body: { weekdays: [], overrides: open } });
+    assert.equal(set.status, 200, JSON.stringify(set.data));
+    assert.ok(set.data.conflicts.some((c) => !c.pickupOk), 'existing bookings on closed days are listed');
+    assert.deepEqual((await customer.api('/config')).data.handover, { weekdays: [], overrides: open });
+    const oneDay = await customer.api('/bookings', { method: 'POST', body: body(1) });
+    assert.equal(oneDay.status, 400);
+    assert.match(oneDay.data.error, /Returns aren't available/);
+    const closedPickup = await customer.api('/bookings', { method: 'POST', body: body(1, plusDays(13)) });
+    assert.equal(closedPickup.status, 400);
+    assert.match(closedPickup.data.error, /Pickups aren't available/);
+    const twoDays = await customer.api('/bookings', { method: 'POST', body: body(2) });
+    assert.equal(twoDays.status, 201, JSON.stringify(twoDays.data));
+    // Past dates are dropped when saving.
+    const past = await admin.api('/admin/handover', { method: 'PUT', body: { weekdays: [0, 1, 2, 3, 4, 5, 6], overrides: { '2020-01-01': false } } });
+    assert.deepEqual(past.data.overrides, {});
+  } finally {
+    const reset = await admin.api('/admin/handover', { method: 'PUT', body: { weekdays: [0, 1, 2, 3, 4, 5, 6], overrides: {} } });
+    assert.equal(reset.data.conflicts.length, 0);
+  }
 });
 
 await step('admin blocks dates and they become unavailable', async () => {
@@ -262,7 +295,7 @@ await step('regular admin can manage bookings but cannot change pricing', async 
   assert.equal((await admin.api('/admin/staff', { method: 'POST', body: { fullName: 'Desk Admin', email: staffEmail, password: 'staff-password-123', role: 'admin' } })).status, 201);
   assert.equal((await staff.api('/auth/login', { method: 'POST', body: { email: staffEmail, password: 'staff-password-123' } })).status, 200);
   assert.equal((await staff.api('/admin/bookings')).status, 200);
-  assert.equal((await staff.api('/admin/settings', { method: 'PUT', body: { settings: { daily_rate_aud_cents: 100 } } })).status, 403);
+  assert.equal((await staff.api('/admin/settings', { method: 'PUT', body: { settings: { price_table: '1' } } })).status, 403);
   assert.equal((await customer.api('/admin/stats')).status, 403);
 });
 
@@ -270,7 +303,7 @@ await step('customer cancels more than 48h ahead and gets tokens back', async ()
   const before = (await customer.api('/me')).data.user.tokenCents;
   assert.equal((await customer.api(`/bookings/${bookingId}/cancel`, { method: 'POST' })).status, 200);
   const after = (await customer.api('/me')).data.user.tokenCents;
-  assert.equal(after - before, 7000);
+  assert.equal(after - before, 6900);
 });
 
 await step('admin dashboard, bookings and audit log load', async () => {

@@ -1,4 +1,4 @@
-import { api, showError, setBusy, withShrunkLicence, renderGoogleButton } from './common.js';
+import { api, isStaff, showError, setBusy, withShrunkLicence, renderGoogleButton } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const GOOGLE_KEY = 'kangoo.google';
@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const r = await api('/auth/google', { method: 'POST', body: { credential } });
         if (r.needsRegistration) return applyGoogle({ credential, ...r.profile });
-        window.location.href = '/account'; // already registered: now logged in
+        window.location.href = isStaff(r.user) ? '/admin' : '/account'; // already registered: now logged in
       } catch (err) {
         showError($('regError'), err);
       }

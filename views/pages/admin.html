@@ -17,7 +17,7 @@
             <button role="tab" data-tab="bookings">Bookings</button>
             <button role="tab" data-tab="customers">Customers</button>
             <button role="tab" data-tab="messages">Messages <span class="badge" id="tabUnread" hidden></span></button>
-            <button role="tab" data-tab="calendar">Calendar blocks</button>
+            <button role="tab" data-tab="handover" data-super>Block out dates</button>
             <button role="tab" data-tab="pricing">Pricing &amp; currency</button>
             <button role="tab" data-tab="settings" data-super>Settings</button>
             <button role="tab" data-tab="staff" data-super>Staff</button>
@@ -75,17 +75,31 @@
             </div>
           </div>
 
-          <!-- Calendar blocks -->
-          <div class="tab-panel" data-panel="calendar" role="tabpanel" hidden>
+          <!-- Block out dates -->
+          <div class="tab-panel" data-panel="handover" role="tabpanel" hidden>
             <h2>Block out dates</h2>
-            <p class="hint">Use for servicing, repairs or holidays. Customers can't book over blocked dates.</p>
-            <form class="inline-form" id="blockForm">
-              <label for="blkStart">From</label><input id="blkStart" type="date" required>
-              <label for="blkEnd">To</label><input id="blkEnd" type="date" required>
-              <label for="blkReason">Reason</label><input id="blkReason" maxlength="200" placeholder="e.g. Service">
-              <button class="btn" type="submit">Add block</button>
-            </form>
-            <div id="blockList"></div>
+            <p class="hint">Select the dates the car cannot be picked up or dropped off (e.g. days you work). Customers can still have the van out on hire across these days. Every click autosaves immediately.</p>
+            <p class="hint" id="hoReadonly" hidden>Only the superadmin can change block out dates.</p>
+
+            <h3>Usually available</h3>
+            <p class="hint">Turn on the days of the week you're usually free. Then click a date below to change just that day.</p>
+            <div class="weekday-toggles" id="hoWeekdays" role="group" aria-label="Usual pickup and return days"></div>
+
+            <div class="card ho-card">
+              <div class="calendar-head">
+                <button class="icon-btn" id="hoPrev" type="button" aria-label="Previous month" data-testid="ho-prev" data-agent-id="ho-prev">&lsaquo;</button>
+                <h3 id="hoTitle" aria-live="polite">Month</h3>
+                <button class="icon-btn" id="hoNext" type="button" aria-label="Next month" data-testid="ho-next" data-agent-id="ho-next">&rsaquo;</button>
+              </div>
+              <div class="calendar" id="hoCalendar" role="grid" aria-labelledby="hoTitle"></div>
+              <ul class="legend">
+                <li><span class="dot available"></span>Pickups &amp; drop-offs available</li>
+                <li><span class="dot closed"></span>No pickups or returns</li>
+                <li><span class="dot changed"></span>Changed from your usual week</li>
+              </ul>
+            </div>
+            <p class="hint" id="hoStatus" aria-live="polite"></p>
+            <div id="hoConflicts"></div>
           </div>
 
           <!-- Pricing & currency -->
@@ -96,14 +110,10 @@
               <fieldset>
                 <legend>How the daily price is set</legend>
                 <label class="radio"><input type="radio" name="price_basis" value="aud">
-                  <span><strong>Fixed AUD price.</strong> The AUD price stays the same; the number of tokens changes with the exchange rate.</span></label>
+                  <span><strong>Fixed AUD price.</strong> The AUD prices in the price list stay the same; the number of tokens changes with the exchange rate.</span></label>
                 <label class="radio"><input type="radio" name="price_basis" value="tokens">
                   <span><strong>Fixed token price.</strong> The number of tokens stays the same; the AUD price changes with the exchange rate.</span></label>
                 <div class="field-row">
-                  <div class="field" id="audRateField">
-                    <label for="pAud">Daily rate, AUD ex GST</label>
-                    <input id="pAud" type="number" min="1" step="1" required>
-                  </div>
                   <div class="field" id="tokenRateField">
                     <label for="pTok">Daily rate, tokens ex GST (1 token = US$1)</label>
                     <input id="pTok" type="number" min="1" step="1" required>
@@ -113,6 +123,13 @@
                     <input id="pGst" type="number" min="0" max="50" step="0.01" required>
                   </div>
                 </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>Price list by hire length</legend>
+                <p class="hint">Total price before GST, in whole Australian dollars. The 1-day price is the daily rate, and the last line is the
+                  longest hire. Customers see these as price cards on the home page. With a fixed token price, the token rate follows the same steps.</p>
+                <div class="price-list-edit" id="pList"></div>
               </fieldset>
 
               <fieldset>
