@@ -1,0 +1,167 @@
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Van hire &middot; {{pickup_label}}</p>
+          <h1>Hire a Renault Kangoo for the day.</h1>
+          <p class="lead">A compact, easy-to-park van for moves, deliveries, markets and trips to the tip.
+            Book online in 24-hour blocks and pick up from Wishart.</p>
+          <div class="price-tag" id="heroPrice" aria-live="polite">
+            <span class="price-main">A$90.00</span><span class="price-sub">+ GST per 24 hours</span>
+          </div>
+          <div class="hero-actions">
+            <a class="btn" href="#book">Check availability</a>
+            <a class="btn btn-ghost" href="/rental-disclaimer">Insurance requirements</a>
+          </div>
+        </div>
+        <figure class="hero-media">
+          <img src="/images/kangoo-front.jpeg" alt="White Renault Kangoo van, front three-quarter view" width="1024" height="572">
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="book" aria-labelledby="bookTitle">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="bookTitle">Book the van</h2>
+          <p>Pick a date, a pickup time and how many 24-hour periods you need.</p>
+        </div>
+
+        <div class="booking-grid">
+          <div class="card calendar-card">
+            <div class="calendar-head">
+              <button class="icon-btn" id="calPrev" type="button" aria-label="Previous month">&lsaquo;</button>
+              <h3 id="calTitle" aria-live="polite">Month</h3>
+              <button class="icon-btn" id="calNext" type="button" aria-label="Next month">&rsaquo;</button>
+            </div>
+            <div class="calendar" id="calendar" role="grid" aria-labelledby="calTitle"></div>
+            <ul class="legend">
+              <li><span class="dot available"></span>Available</li>
+              <li><span class="dot partial"></span>Partly booked</li>
+              <li><span class="dot booked"></span>Booked</li>
+              <li><span class="dot blocked"></span>Unavailable</li>
+            </ul>
+          </div>
+
+          <form class="card booking-form" id="bookingForm" novalidate>
+            <div class="field">
+              <label for="bkDate">Pickup date</label>
+              <input id="bkDate" name="date" type="date" required>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="bkTime">Pickup time</label>
+                <select id="bkTime" name="time" required></select>
+              </div>
+              <div class="field">
+                <label for="bkDays">24-hour periods</label>
+                <select id="bkDays" name="days" required></select>
+              </div>
+            </div>
+            <p class="hint" id="bkReturn">Return by: choose a date</p>
+
+            <dl class="quote" id="quote">
+              <div><dt>Rental (ex GST)</dt><dd id="qSubtotal">–</dd></div>
+              <div><dt>GST</dt><dd id="qGst">–</dd></div>
+              <div class="quote-total"><dt>Total (AUD)</dt><dd id="qTotal">–</dd></div>
+              <div class="quote-tokens"><dt>Tokens to pay</dt><dd id="qTokens">–</dd></div>
+            </dl>
+            <p class="hint" id="qRate"></p>
+
+            <div class="confirm-box" id="confirmBox" hidden>
+              <div class="checklist" id="checklist"></div>
+              <label class="check">
+                <input type="checkbox" id="bkDisclaimer">
+                <span>I have read and accept the <a href="/rental-disclaimer" target="_blank">rental disclaimer</a>.
+                  I hold my own insurance, including at least {{indemnity}} indemnity (public liability) cover,
+                  for the whole rental period.</span>
+              </label>
+              <div class="field">
+                <label for="bkNote">Note for our team <span class="optional">(optional)</span></label>
+                <textarea id="bkNote" rows="2" maxlength="500"></textarea>
+              </div>
+            </div>
+
+            <p class="form-error" id="bkError" role="alert" hidden></p>
+            <button class="btn btn-block" id="bkSubmit" type="submit">Book now</button>
+            <p class="hint center" id="bkAuthHint">You'll need to register and verify your licence before booking.</p>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt" id="pricing" aria-labelledby="pricingTitle">
+      <div class="container">
+        <h2 id="pricingTitle">Pricing</h2>
+        <div class="price-stats">
+          <div class="card"><strong id="pxAud">A$99.00</strong><span>per 24 hours, inc GST</span></div>
+          <div class="card"><strong id="pxTokens">–</strong><span>tokens per 24 hours</span></div>
+          <div class="card"><strong>1 token = US$1</strong><span id="pxRate">today's rate</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="vanTitle">
+      <div class="container van-grid">
+        <figure class="van-photo">
+          <img src="/images/kangoo-side.jpeg" alt="White Renault Kangoo van, side view showing the sliding side door" width="1024" height="572" loading="lazy">
+        </figure>
+        <div>
+          <h2 id="vanTitle">The van</h2>
+          <ul class="feature-list">
+            <li><strong>Renault Kangoo</strong> compact van: easy to drive and park around Brisbane.</li>
+            <li><strong>Sliding side door</strong> for loading from the kerb.</li>
+            <li>Good for <strong>small moves, deliveries, markets and tip runs</strong>.</li>
+            <li>Drive it on a normal <strong>car (C class) licence</strong>.</li>
+            <li>Pick up and return at our <strong>{{pickup_label}}</strong> depot.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt" aria-labelledby="howTitle">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="howTitle">How it works</h2>
+        </div>
+        <ol class="steps steps-4">
+          <li class="step card"><span class="step-num">1</span><h3>Register</h3><p>Create an account with your details. Registration is open to people within {{radius_km}} km of our depot.</p></li>
+          <li class="step card"><span class="step-num">2</span><h3>Verify your licence</h3><p>Upload a photo of your licence. We check it, then delete the photo straight away.</p></li>
+          <li class="step card"><span class="step-num">3</span><h3>Add your insurance</h3><p>Tell us your insurer and confirm your {{indemnity}} indemnity cover.</p></li>
+          <li class="step card"><span class="step-num">4</span><h3>Buy tokens and book</h3><p>Top up tokens, pick your time and you're set. Message us any time from your account.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section" id="hub" aria-labelledby="hubTitle">
+      <div class="container">
+        <div class="section-head">
+          <h2 id="hubTitle">Location, Weather &amp; Time Hub</h2>
+          <p>Everything you need for pickup day at a glance.</p>
+        </div>
+        <div class="hub-grid">
+          <div class="card hub-card hub-map">
+            <h3>Pickup location</h3>
+            <p id="hubPickup">{{pickup_label}}</p>
+            <div class="map-frame" id="hubMap"></div>
+            <div class="hub-actions">
+              <a class="btn btn-small btn-ghost" id="hubDirections" target="_blank" rel="noopener">Get directions</a>
+              <button class="btn btn-small btn-ghost" id="hubLocate" type="button">How far am I?</button>
+            </div>
+            <p class="hint" id="hubDistance" aria-live="polite"></p>
+          </div>
+          <div class="card hub-card">
+            <h3>Brisbane time</h3>
+            <p class="clock" id="hubClock" aria-live="off">--:--</p>
+            <p class="hint" id="hubDate"></p>
+            <p class="hint">Queensland doesn't use daylight saving (AEST, UTC+10).</p>
+            <h3 class="mt">Exchange rate</h3>
+            <p class="big-figure" id="hubFx">US$1.00 = A$–</p>
+            <p class="hint" id="hubFxSource"></p>
+          </div>
+          <div class="card hub-card">
+            <h3>Weather at the depot</h3>
+            <div id="hubWeather"><p class="hint">Loading weather…</p></div>
+          </div>
+        </div>
+      </div>
+    </section>

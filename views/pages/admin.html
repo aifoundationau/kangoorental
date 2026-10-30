@@ -1,0 +1,217 @@
+    <section class="section panel-section">
+      <div class="container wide">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow" id="adminRole">Admin</p>
+            <h1>Admin panel</h1>
+          </div>
+          <div class="balance-chip">
+            <span>Exchange rate</span>
+            <strong id="hdrFx">–</strong>
+          </div>
+        </div>
+
+        <div class="panel">
+          <nav class="tabs" role="tablist" aria-label="Admin sections">
+            <button role="tab" data-tab="dashboard" aria-selected="true">Dashboard</button>
+            <button role="tab" data-tab="bookings">Bookings</button>
+            <button role="tab" data-tab="customers">Customers</button>
+            <button role="tab" data-tab="messages">Messages <span class="badge" id="tabUnread" hidden></span></button>
+            <button role="tab" data-tab="calendar">Calendar blocks</button>
+            <button role="tab" data-tab="pricing">Pricing &amp; currency</button>
+            <button role="tab" data-tab="settings" data-super>Settings</button>
+            <button role="tab" data-tab="staff" data-super>Staff</button>
+            <button role="tab" data-tab="audit">Audit log</button>
+          </nav>
+
+          <!-- Dashboard -->
+          <div class="tab-panel" data-panel="dashboard" role="tabpanel">
+            <div class="stats" id="stats"></div>
+            <h2 class="mt">Upcoming pickups</h2>
+            <div id="upcoming"></div>
+          </div>
+
+          <!-- Bookings -->
+          <div class="tab-panel" data-panel="bookings" role="tabpanel" hidden>
+            <div class="toolbar">
+              <label for="bkFilter">Show</label>
+              <select id="bkFilter">
+                <option value="">All bookings</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="active">In progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div class="table-wrap" id="bookingTable"></div>
+          </div>
+
+          <!-- Customers -->
+          <div class="tab-panel" data-panel="customers" role="tabpanel" hidden>
+            <form class="toolbar" id="custSearch">
+              <label class="sr-only" for="custQ">Search customers</label>
+              <input id="custQ" type="search" placeholder="Search name, email or licence number">
+              <button class="btn btn-small" type="submit">Search</button>
+            </form>
+            <div class="split">
+              <div class="table-wrap" id="custTable"></div>
+              <aside class="card detail" id="custDetail" hidden></aside>
+            </div>
+          </div>
+
+          <!-- Messages -->
+          <div class="tab-panel" data-panel="messages" role="tabpanel" hidden>
+            <div class="inbox">
+              <ul class="thread-list" id="threads"></ul>
+              <div class="thread-view">
+                <h3 id="threadTitle">Select a conversation</h3>
+                <div class="chat" id="adminChat"></div>
+                <form class="chat-form" id="adminChatForm" hidden>
+                  <label class="sr-only" for="adminChatInput">Reply</label>
+                  <textarea id="adminChatInput" rows="2" maxlength="2000" placeholder="Reply to customer…" required></textarea>
+                  <button class="btn" type="submit">Send</button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- Calendar blocks -->
+          <div class="tab-panel" data-panel="calendar" role="tabpanel" hidden>
+            <h2>Block out dates</h2>
+            <p class="hint">Use for servicing, repairs or holidays. Customers can't book over blocked dates.</p>
+            <form class="inline-form" id="blockForm">
+              <label for="blkStart">From</label><input id="blkStart" type="date" required>
+              <label for="blkEnd">To</label><input id="blkEnd" type="date" required>
+              <label for="blkReason">Reason</label><input id="blkReason" maxlength="200" placeholder="e.g. Service">
+              <button class="btn" type="submit">Add block</button>
+            </form>
+            <div id="blockList"></div>
+          </div>
+
+          <!-- Pricing & currency -->
+          <div class="tab-panel" data-panel="pricing" role="tabpanel" hidden>
+            <h2>Pricing &amp; currency conversion</h2>
+            <p class="hint" id="pricingReadonly" hidden>Only the superadmin can change pricing. You can view the current settings below.</p>
+            <form id="pricingForm" class="stack">
+              <fieldset>
+                <legend>How the daily price is set</legend>
+                <label class="radio"><input type="radio" name="price_basis" value="aud">
+                  <span><strong>Fixed AUD price.</strong> The AUD price stays the same; the number of tokens changes with the exchange rate.</span></label>
+                <label class="radio"><input type="radio" name="price_basis" value="tokens">
+                  <span><strong>Fixed token price.</strong> The number of tokens stays the same; the AUD price changes with the exchange rate.</span></label>
+                <div class="field-row">
+                  <div class="field" id="audRateField">
+                    <label for="pAud">Daily rate, AUD ex GST</label>
+                    <input id="pAud" type="number" min="1" step="0.01" required>
+                  </div>
+                  <div class="field" id="tokenRateField">
+                    <label for="pTok">Daily rate, tokens ex GST (1 token = US$1)</label>
+                    <input id="pTok" type="number" min="1" step="0.01" required>
+                  </div>
+                  <div class="field">
+                    <label for="pGst">GST %</label>
+                    <input id="pGst" type="number" min="0" max="50" step="0.01" required>
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>USD &rarr; AUD exchange rate</legend>
+                <label class="radio"><input type="radio" name="fx_mode" value="live">
+                  <span><strong>Live market rate.</strong> Updated every 6 hours from the European Central Bank (via Frankfurter), with a backup feed.</span></label>
+                <label class="radio"><input type="radio" name="fx_mode" value="manual">
+                  <span><strong>Manual rate.</strong> Use the rate you enter below.</span></label>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="pManual">Manual rate (AUD per US$1.00)</label>
+                    <input id="pManual" type="number" min="0.5" max="5" step="0.0001" required>
+                  </div>
+                  <div class="field">
+                    <span class="label">Live rate</span>
+                    <p class="big-figure" id="liveRate">–</p>
+                    <p class="hint" id="liveRateInfo"></p>
+                    <button class="btn btn-small btn-ghost" type="button" id="fxRefresh">Refresh now</button>
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>Token packs</legend>
+                <div class="field">
+                  <label for="pPacks">Packs shown to customers (comma-separated)</label>
+                  <input id="pPacks" required>
+                </div>
+              </fieldset>
+
+              <div class="calc card" aria-live="polite">
+                <h3>What a customer pays for 24 hours</h3>
+                <ol class="calc-steps" id="calcSteps"></ol>
+              </div>
+
+              <p class="form-error" id="pricingError" role="alert" hidden></p>
+              <button class="btn" type="submit" id="pricingSave" data-super>Save pricing</button>
+            </form>
+          </div>
+
+          <!-- Settings -->
+          <div class="tab-panel" data-panel="settings" role="tabpanel" hidden>
+            <h2>Site settings</h2>
+            <form id="settingsForm" class="stack">
+              <div class="field-row">
+                <div class="field"><label for="s_business_name">Business name</label><input id="s_business_name" data-key="business_name"></div>
+                <div class="field"><label for="s_announcement">Announcement banner (blank to hide)</label><input id="s_announcement" data-key="announcement" maxlength="300"></div>
+              </div>
+              <div class="field-row three">
+                <div class="field"><label for="s_pickup_label">Pickup location</label><input id="s_pickup_label" data-key="pickup_label"></div>
+                <div class="field"><label for="s_pickup_lat">Latitude</label><input id="s_pickup_lat" data-key="pickup_lat" type="number" step="0.0001"></div>
+                <div class="field"><label for="s_pickup_lng">Longitude</label><input id="s_pickup_lng" data-key="pickup_lng" type="number" step="0.0001"></div>
+              </div>
+              <div class="field-row three">
+                <div class="field"><label for="s_registration_radius_km">Registration radius (km)</label><input id="s_registration_radius_km" data-key="registration_radius_km" type="number"></div>
+                <div class="field"><label for="s_min_driver_age">Minimum driver age</label><input id="s_min_driver_age" data-key="min_driver_age" type="number"></div>
+                <div class="field"><label for="s_required_indemnity">Required indemnity (AUD)</label><input id="s_required_indemnity" data-key="required_indemnity_cents" data-cents type="number"></div>
+              </div>
+              <div class="field-row three">
+                <div class="field"><label for="s_first_pickup_hour">First pickup hour (0–23)</label><input id="s_first_pickup_hour" data-key="first_pickup_hour" type="number"></div>
+                <div class="field"><label for="s_last_pickup_hour">Last pickup hour (0–23)</label><input id="s_last_pickup_hour" data-key="last_pickup_hour" type="number"></div>
+                <div class="field"><label for="s_buffer_hours">Turnaround buffer (hours)</label><input id="s_buffer_hours" data-key="buffer_hours" type="number"></div>
+              </div>
+              <div class="field-row three">
+                <div class="field"><label for="s_min_notice_hours">Minimum notice (hours)</label><input id="s_min_notice_hours" data-key="min_notice_hours" type="number"></div>
+                <div class="field"><label for="s_max_rental_days">Maximum rental (days)</label><input id="s_max_rental_days" data-key="max_rental_days" type="number"></div>
+                <div class="field"><label for="s_max_advance_days">Book up to (days ahead)</label><input id="s_max_advance_days" data-key="max_advance_days" type="number"></div>
+              </div>
+              <div class="field-row three">
+                <div class="field"><label for="s_cancellation_hours">Free cancellation up to (hours before)</label><input id="s_cancellation_hours" data-key="cancellation_hours" type="number"></div>
+                <div class="field"><label for="s_contact_email">Contact email</label><input id="s_contact_email" data-key="contact_email" type="email"></div>
+                <div class="field"><label for="s_contact_phone">Contact phone</label><input id="s_contact_phone" data-key="contact_phone"></div>
+              </div>
+              <p class="form-error" id="settingsError" role="alert" hidden></p>
+              <button class="btn" type="submit">Save settings</button>
+            </form>
+          </div>
+
+          <!-- Staff -->
+          <div class="tab-panel" data-panel="staff" role="tabpanel" hidden>
+            <h2>Staff accounts</h2>
+            <div id="staffList"></div>
+            <h3 class="mt">Add a staff member</h3>
+            <form id="staffForm" class="stack narrow-form">
+              <div class="field"><label for="stName">Name</label><input id="stName" required maxlength="120"></div>
+              <div class="field"><label for="stEmail">Email</label><input id="stEmail" type="email" required></div>
+              <div class="field"><label for="stPw">Temporary password (12+ characters)</label><input id="stPw" type="password" minlength="12" required autocomplete="new-password"></div>
+              <div class="field"><label for="stRole">Role</label>
+                <select id="stRole"><option value="admin">Admin (bookings, customers, messages)</option><option value="superadmin">Superadmin (everything, including pricing)</option></select></div>
+              <button class="btn" type="submit">Create account</button>
+            </form>
+          </div>
+
+          <!-- Audit -->
+          <div class="tab-panel" data-panel="audit" role="tabpanel" hidden>
+            <h2>Audit log</h2>
+            <p class="hint">Security-relevant events, newest first.</p>
+            <div class="table-wrap" id="auditTable"></div>
+          </div>
+        </div>
+      </div>
+    </section>

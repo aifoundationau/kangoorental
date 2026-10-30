@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{page_title}}</title>
+  <meta name="description" content="Hire a Renault Kangoo van in Wishart, Brisbane. Book online by the 24 hours, pay with tokens.">
+  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/styles.css">
+  <script type="module" src="/js/common.js"></script>
+  {{page_script}}
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="announcement" id="announcement" hidden></div>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/" aria-label="{{business_name}} home">
+        <span class="brand-mark" aria-hidden="true">K</span>
+        <span class="brand-text">{{business_name}}<small>Wishart, Brisbane</small></span>
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav">Menu</button>
+      <nav class="site-nav" id="siteNav" aria-label="Main">
+        <a href="/#book">Book</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/#hub">Weather &amp; time</a>
+        <a href="/rental-disclaimer">Insurance</a>
+        <span class="nav-auth" data-auth="guest">
+          <a href="/login">Log in</a>
+          <a class="btn btn-small" href="/register">Register</a>
+        </span>
+        <span class="nav-auth" data-auth="user" hidden>
+          <a href="/account" id="navAccount">My account <span class="badge" id="navUnread" hidden></span></a>
+          <button class="link-button" id="logoutBtn" type="button">Log out</button>
+        </span>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+{{body}}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <strong>{{business_name}}</strong>
+        <span>Renault Kangoo van hire &middot; {{pickup_label}}</span>
+      </div>
+      <nav class="footer-links" aria-label="Policies">
+        <a href="/founder-welcome">Founder Welcome</a>
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="/ai-policy">AI Policy (ISO/IEC 42001)</a>
+        <a href="/security-policy">Security Policy (ISO/IEC 27001)</a>
+      </nav>
+      <p class="footer-copy">&copy; 2026 AI Foundation</p>
+    </div>
+  </footer>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

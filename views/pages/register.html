@@ -1,0 +1,107 @@
+    <section class="section">
+      <div class="container medium">
+        <form class="card form-card" id="registerForm" novalidate>
+          <h1>Create your account</h1>
+          <p class="lead-sm">Registration is open to people within <strong>{{radius_km}} km</strong> of our {{pickup_label}} depot.
+            Drivers must be at least {{min_age}} with a current, full Australian driver licence.</p>
+
+          <fieldset class="geo-step" id="geoStep">
+            <legend>1. Confirm you're in our area</legend>
+            <p class="hint">We use your device's location once, to check you're near Brisbane. We store the distance and coordinates with your account.</p>
+            <button class="btn btn-ghost" type="button" id="geoBtn">Share my location</button>
+            <p class="geo-status" id="geoStatus" aria-live="polite"></p>
+          </fieldset>
+
+          <fieldset id="detailsStep" disabled>
+            <legend>2. Your details</legend>
+            <div class="field">
+              <label for="fullName">Full name (exactly as on your licence)</label>
+              <input id="fullName" name="fullName" autocomplete="name" required maxlength="120">
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="email">Email</label>
+                <input id="email" name="email" type="email" autocomplete="email" required maxlength="120">
+              </div>
+              <div class="field">
+                <label for="phone">Mobile number</label>
+                <input id="phone" name="phone" type="tel" autocomplete="tel" required placeholder="04xx xxx xxx" maxlength="20">
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="dob">Date of birth</label>
+                <input id="dob" name="dob" type="date" autocomplete="bday" required>
+              </div>
+              <div class="field">
+                <label for="password">Password <span class="optional">(10+ characters)</span></label>
+                <input id="password" name="password" type="password" autocomplete="new-password" minlength="10" required>
+              </div>
+            </div>
+            <div class="field">
+              <label for="addressLine">Street address</label>
+              <input id="addressLine" name="addressLine" autocomplete="street-address" required maxlength="160">
+            </div>
+            <div class="field-row three">
+              <div class="field">
+                <label for="suburb">Suburb</label>
+                <input id="suburb" name="suburb" autocomplete="address-level2" required maxlength="80">
+              </div>
+              <div class="field">
+                <label for="state">State</label>
+                <select id="state" name="state" required>
+                  <option>QLD</option><option>NSW</option><option>VIC</option><option>SA</option>
+                  <option>WA</option><option>TAS</option><option>NT</option><option>ACT</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="postcode">Postcode</label>
+                <input id="postcode" name="postcode" inputmode="numeric" autocomplete="postal-code" pattern="\d{4}" required maxlength="4">
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset id="licenceStep" disabled>
+            <legend>3. Driver licence</legend>
+            <div class="field-row three">
+              <div class="field">
+                <label for="licenceNumber">Licence number</label>
+                <input id="licenceNumber" name="licenceNumber" required maxlength="20" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="licenceState">Issuing state</label>
+                <select id="licenceState" name="licenceState" required>
+                  <option>QLD</option><option>NSW</option><option>VIC</option><option>SA</option>
+                  <option>WA</option><option>TAS</option><option>NT</option><option>ACT</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="licenceExpiry">Expiry date</label>
+                <input id="licenceExpiry" name="licenceExpiry" type="date" required>
+              </div>
+            </div>
+            <div class="field">
+              <label for="licence">Photo of the front of your licence</label>
+              <input id="licence" name="licence" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required>
+              <p class="hint">JPEG, PNG or WebP up to 5 MB. Lay the card flat in good light with all four corners showing.
+                <strong>We check the photo against your details, then delete it. The image is never saved.</strong></p>
+            </div>
+            <label class="check">
+              <input type="checkbox" name="acceptAi" value="true" required>
+              <span>I agree to my licence photo being checked automatically by an AI system, as described in the
+                <a href="/ai-policy" target="_blank">AI Policy</a>. A person reviews anything the check can't confirm.</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="acceptTerms" value="true" required>
+              <span>I accept the <a href="/terms" target="_blank">Terms of Service</a>,
+                <a href="/privacy" target="_blank">Privacy Policy</a> and
+                <a href="/rental-disclaimer" target="_blank">rental disclaimer</a>.</span>
+            </label>
+          </fieldset>
+
+          <p class="form-error" id="regError" role="alert" hidden></p>
+          <button class="btn btn-block" type="submit" id="regBtn" disabled>Create account</button>
+          <p class="center hint">Already registered? <a href="/login">Log in</a></p>
+        </form>
+      </div>
+    </section>

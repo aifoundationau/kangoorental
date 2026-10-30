@@ -1,0 +1,70 @@
+    <section class="section">
+      <div class="container legal">
+        <p class="eyebrow">Information security</p>
+        <h1>Security Policy (ISO/IEC 27001)</h1>
+        <p class="updated">Last updated 30 October 2026</p>
+
+        <p>This policy sets out how {{business_name}} (operated by AI Foundation) protects the confidentiality, integrity and availability of
+          customer information. It is structured around ISO/IEC 27001:2022 and its Annex A controls. This policy describes how we work with the
+          standard; it is not a claim of certification.</p>
+
+        <h2>1. Scope and responsibility</h2>
+        <p>This policy covers the {{business_name}} website, its database and the service providers that process customer data. AI Foundation's leadership is
+          responsible for information security, approves this policy and reviews it at least once a year or after any significant change or incident.</p>
+
+        <h2>2. Data minimisation</h2>
+        <ul>
+          <li>Licence photos are processed in memory and never stored.</li>
+          <li>Card details are handled by Stripe and never reach our systems.</li>
+          <li>We collect only the information needed to verify drivers and run bookings.</li>
+        </ul>
+
+        <h2>3. Access control</h2>
+        <ul>
+          <li>Role-based access: customers see only their own data; admins manage bookings, customers and messages; only the superadmin can change
+            pricing, currency settings and staff accounts.</li>
+          <li>Staff accounts are personal, never shared, and disabled promptly when no longer needed.</li>
+          <li>The database is reachable only from our server through a dedicated service account. Browsers never access it directly.</li>
+        </ul>
+
+        <h2>4. Authentication and sessions</h2>
+        <ul>
+          <li>Passwords are hashed with scrypt and a unique salt. We never store or see plain-text passwords.</li>
+          <li>Sessions use random tokens in secure, HttpOnly, SameSite cookies. Only a hash of the token is stored, and sessions expire after {{session_days}} days.</li>
+          <li>Changing a password signs out all other sessions.</li>
+          <li>Sign-in, registration, upload and messaging are rate-limited to slow down guessing and abuse.</li>
+        </ul>
+
+        <h2>5. Application security</h2>
+        <ul>
+          <li>All traffic is encrypted with HTTPS (TLS), with HTTP Strict Transport Security.</li>
+          <li>Every state-changing request is protected against cross-site request forgery.</li>
+          <li>A strict Content Security Policy, frame blocking and other security headers reduce the risk of cross-site scripting and clickjacking.</li>
+          <li>All input is validated on the server, and output is escaped before display.</li>
+          <li>Payment confirmations from Stripe are verified by signature, and each payment can be credited only once.</li>
+        </ul>
+
+        <h2>6. Data protection</h2>
+        <ul>
+          <li>Customer data is stored in Google Cloud Firestore, encrypted at rest by Google.</li>
+          <li>Database backups are scheduled and restores are tested periodically.</li>
+          <li>Personal details are removed when a customer deletes their account; records required by law are retained in anonymised form.</li>
+        </ul>
+
+        <h2>7. Logging and monitoring</h2>
+        <p>Security-relevant events, including sign-ins, failed sign-ins, licence checks, pricing changes, token adjustments and booking changes, are written to an
+          audit log that staff review regularly.</p>
+
+        <h2>8. Suppliers</h2>
+        <p>We use established providers (Google Cloud, Anthropic, Stripe) with recognised security certifications, and we review their security and privacy terms
+          before use and when they change.</p>
+
+        <h2>9. Incident response</h2>
+        <p>Suspected incidents are contained, investigated and recorded. Where a breach is likely to cause serious harm, we notify affected customers and the
+          Office of the Australian Information Commissioner under the Notifiable Data Breaches scheme.</p>
+
+        <h2>10. Reporting a vulnerability</h2>
+        <p>If you believe you've found a security issue, please contact us {{contact_email}}. Please don't access other people's data or disrupt the
+          service. We'll acknowledge your report and keep you informed.</p>
+      </div>
+    </section>

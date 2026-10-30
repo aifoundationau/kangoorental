@@ -1,0 +1,188 @@
+    <section class="section panel-section">
+      <div class="container">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">My account</p>
+            <h1 id="acctName">Welcome</h1>
+          </div>
+          <div class="balance-chip" aria-live="polite">
+            <span>Token balance</span>
+            <strong id="acctBalance">–</strong>
+          </div>
+        </div>
+
+        <div class="flash" id="flash" hidden></div>
+
+        <div class="panel">
+          <nav class="tabs" role="tablist" aria-label="Account sections">
+            <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+            <button role="tab" data-tab="bookings">Bookings</button>
+            <button role="tab" data-tab="tokens">Tokens</button>
+            <button role="tab" data-tab="licence">Licence</button>
+            <button role="tab" data-tab="insurance">Insurance</button>
+            <button role="tab" data-tab="messages">Messages <span class="badge" id="tabUnread" hidden></span></button>
+            <button role="tab" data-tab="profile">Profile</button>
+          </nav>
+
+          <div class="tab-panel" data-panel="overview" role="tabpanel">
+            <h2>Ready to book?</h2>
+            <ul class="status-list" id="readyList"></ul>
+            <a class="btn" href="/#book">Book the van</a>
+            <h2 class="mt">Next booking</h2>
+            <div id="nextBooking"><p class="hint">No upcoming bookings.</p></div>
+          </div>
+
+          <div class="tab-panel" data-panel="bookings" role="tabpanel" hidden>
+            <h2>Your bookings</h2>
+            <p class="hint">Cancel online more than {{cancellation_hours}} hours before pickup for a full token refund. After that, please message us.</p>
+            <div id="bookingList"></div>
+          </div>
+
+          <div class="tab-panel" data-panel="tokens" role="tabpanel" hidden>
+            <h2>Buy tokens</h2>
+            <p>1 token = <strong>US$1.00</strong>. Rental prices are set in Australian dollars and converted at the current exchange rate
+              (<span id="tokRate">–</span>). One 24-hour rental is currently <strong id="tokDay">–</strong>.</p>
+            <div class="packs" id="packs"></div>
+            <form class="inline-form" id="customTokens">
+              <label for="customAmount">Or choose an amount</label>
+              <input id="customAmount" type="number" min="1" max="5000" step="1" required>
+              <button class="btn" type="submit">Buy tokens</button>
+            </form>
+            <p class="hint" id="payMode"></p>
+            <h2 class="mt">Token history</h2>
+            <div id="txList"></div>
+          </div>
+
+          <div class="tab-panel" data-panel="licence" role="tabpanel" hidden>
+            <h2>Driver licence</h2>
+            <div id="licenceStatus"></div>
+            <form id="licenceForm" class="stack" hidden>
+              <h3>Upload your licence again</h3>
+              <div class="field-row three">
+                <div class="field">
+                  <label for="lNumber">Licence number</label>
+                  <input id="lNumber" name="licenceNumber" required maxlength="20">
+                </div>
+                <div class="field">
+                  <label for="lState">Issuing state</label>
+                  <select id="lState" name="licenceState">
+                    <option>QLD</option><option>NSW</option><option>VIC</option><option>SA</option>
+                    <option>WA</option><option>TAS</option><option>NT</option><option>ACT</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="lExpiry">Expiry date</label>
+                  <input id="lExpiry" name="licenceExpiry" type="date" required>
+                </div>
+              </div>
+              <div class="field">
+                <label for="lFile">Photo of the front of your licence</label>
+                <input id="lFile" name="licence" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required>
+                <p class="hint">The photo is checked and then deleted. It is never saved.</p>
+              </div>
+              <p class="form-error" id="licenceError" role="alert" hidden></p>
+              <button class="btn" type="submit" id="licenceBtn">Check my licence</button>
+            </form>
+          </div>
+
+          <div class="tab-panel" data-panel="insurance" role="tabpanel" hidden>
+            <h2>Insurance</h2>
+            <div class="notice">
+              <p>You must hold your own insurance for every rental, including <strong>indemnity (public liability) cover of at least {{indemnity}}</strong>.
+                Your policy must be valid for the whole rental period. See the <a href="/rental-disclaimer">rental disclaimer</a>.</p>
+            </div>
+            <form id="insuranceForm" class="stack">
+              <div class="field-row three">
+                <div class="field">
+                  <label for="insurer">Insurer</label>
+                  <input id="insurer" name="insurer" required maxlength="100">
+                </div>
+                <div class="field">
+                  <label for="policyNumber">Policy number</label>
+                  <input id="policyNumber" name="policyNumber" required maxlength="60">
+                </div>
+                <div class="field">
+                  <label for="policyExpiry">Policy expiry</label>
+                  <input id="policyExpiry" name="policyExpiry" type="date" required>
+                </div>
+              </div>
+              <label class="check">
+                <input type="checkbox" id="confirmIndemnity" required>
+                <span>I confirm I hold insurance that covers me while hiring and driving this van, including at least {{indemnity}}
+                  indemnity (public liability) cover, and I'll show the certificate of currency on request.</span>
+              </label>
+              <p class="form-error" id="insuranceError" role="alert" hidden></p>
+              <button class="btn" type="submit">Save insurance</button>
+            </form>
+          </div>
+
+          <div class="tab-panel" data-panel="messages" role="tabpanel" hidden>
+            <h2>Messages</h2>
+            <p class="hint">Chat with our team about bookings, pickups or anything else.</p>
+            <div class="chat" id="chat" aria-live="polite"></div>
+            <form class="chat-form" id="chatForm">
+              <label class="sr-only" for="chatInput">Message</label>
+              <textarea id="chatInput" rows="2" maxlength="2000" placeholder="Type your message…" required></textarea>
+              <button class="btn" type="submit">Send</button>
+            </form>
+          </div>
+
+          <div class="tab-panel" data-panel="profile" role="tabpanel" hidden>
+            <h2>Your details</h2>
+            <dl class="details" id="profileFixed"></dl>
+            <form id="profileForm" class="stack">
+              <div class="field-row">
+                <div class="field">
+                  <label for="pPhone">Mobile number</label>
+                  <input id="pPhone" name="phone" type="tel" required maxlength="20">
+                </div>
+                <div class="field">
+                  <label for="pAddress">Street address</label>
+                  <input id="pAddress" name="addressLine" required maxlength="160">
+                </div>
+              </div>
+              <div class="field-row three">
+                <div class="field">
+                  <label for="pSuburb">Suburb</label>
+                  <input id="pSuburb" name="suburb" required maxlength="80">
+                </div>
+                <div class="field">
+                  <label for="pState">State</label>
+                  <select id="pState" name="state">
+                    <option>QLD</option><option>NSW</option><option>VIC</option><option>SA</option>
+                    <option>WA</option><option>TAS</option><option>NT</option><option>ACT</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="pPostcode">Postcode</label>
+                  <input id="pPostcode" name="postcode" required maxlength="4">
+                </div>
+              </div>
+              <button class="btn" type="submit">Save details</button>
+            </form>
+            <p class="hint">To change your name, date of birth or email, please message us.</p>
+
+            <h2 class="mt">Change password</h2>
+            <form id="passwordForm" class="stack narrow-form">
+              <div class="field">
+                <label for="curPw">Current password</label>
+                <input id="curPw" type="password" autocomplete="current-password" required>
+              </div>
+              <div class="field">
+                <label for="newPw">New password (10+ characters)</label>
+                <input id="newPw" type="password" autocomplete="new-password" minlength="10" required>
+              </div>
+              <button class="btn btn-ghost" type="submit">Update password</button>
+            </form>
+
+            <h2 class="mt">Delete account</h2>
+            <p class="hint">We remove your personal details. Booking and payment records are kept as required by tax law. If you have unused tokens, message us before deleting your account.</p>
+            <form id="deleteForm" class="inline-form">
+              <label for="delPw">Password</label>
+              <input id="delPw" type="password" autocomplete="current-password" required>
+              <button class="btn btn-danger" type="submit">Delete my account</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>

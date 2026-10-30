@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.firebase/
+firestore-debug.log
+.DS_Store
+Thumbs.db
+
+# Original uploads (copies live in public/images)
+/e8e5bb31-aa52-49b7-bfe1-6d806ff908ff.jpeg
+/fb66827a-a910-4f77-9966-b4755ced8425.jpeg

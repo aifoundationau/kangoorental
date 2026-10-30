@@ -1,0 +1,58 @@
+    <section class="section">
+      <div class="container legal">
+        <p class="eyebrow">Responsible AI</p>
+        <h1>AI Policy (ISO/IEC 42001)</h1>
+        <p class="updated">Last updated 30 October 2026</p>
+
+        <p>This policy explains how {{business_name}} (operated by AI Foundation) uses artificial intelligence, and the controls we apply.
+          It is structured around ISO/IEC 42001:2023, the international standard for AI management systems. This policy describes how we work
+          with the standard; it is not a claim of certification.</p>
+
+        <h2>1. Our commitments</h2>
+        <ul>
+          <li><strong>Purpose-limited:</strong> we use AI only where it clearly helps customers, and never to make pricing or marketing decisions about individuals.</li>
+          <li><strong>Transparent:</strong> we tell you when AI is used, what it does and what happens to your data.</li>
+          <li><strong>Human oversight:</strong> a person reviews any case the AI can't confirm, and you can always ask for a human review.</li>
+          <li><strong>Privacy by design:</strong> we send the AI only what it needs and keep nothing we don't need.</li>
+          <li><strong>Accountable:</strong> AI Foundation's leadership owns this policy and reviews it at least once a year.</li>
+        </ul>
+
+        <h2>2. AI systems we use</h2>
+        <h3>Driver licence verification</h3>
+        <ul>
+          <li><strong>What it does:</strong> reads the photo of the front of your licence (name, date of birth, licence number, expiry, state,
+            licence type) and checks it matches the details you entered. It also flags photos that are unclear or look altered.</li>
+          <li><strong>Model and provider:</strong> Claude, a large language model by Anthropic, accessed through Anthropic's commercial API.</li>
+          <li><strong>Data:</strong> only the licence photo and a fixed set of instructions are sent. The photo is held in memory, sent once,
+            and then discarded. <strong>We never store the image.</strong> We keep the extracted licence details and the outcome.</li>
+          <li><strong>Consent:</strong> you agree to this check when you register. If you'd rather not use it, contact us and we'll arrange a manual check.</li>
+        </ul>
+
+        <h2>3. How decisions are made</h2>
+        <ul>
+          <li><strong>Verified automatically:</strong> only when every detail matches, the licence is current and nothing looks unusual.</li>
+          <li><strong>Sent to a person:</strong> provisional or probationary licences, suspected alterations, unreadable results, or when the AI service is unavailable.</li>
+          <li><strong>Not verified:</strong> when the photo isn't a licence, is too blurry, is a learner licence, has expired, or the details don't match.
+            You're told why and can upload again or message us for a human review. No adverse decision is final without the option of review by a person.</li>
+        </ul>
+
+        <h2>4. Risk management</h2>
+        <p>We assessed the risks of this system before using it, including:</p>
+        <ul>
+          <li><strong>Errors in reading a licence:</strong> mitigated by strict matching, human review of uncertain cases, and a right to appeal.</li>
+          <li><strong>Unfair outcomes:</strong> the check compares facts printed on the card with what you entered. It doesn't assess appearance or infer
+            sensitive characteristics, and we monitor rejection rates and reasons for patterns.</li>
+          <li><strong>Privacy:</strong> image never stored; minimum data sent; provider bound by commercial data protection terms.</li>
+          <li><strong>Availability:</strong> if the AI service fails, the system defaults to manual review rather than rejecting customers.</li>
+          <li><strong>Misuse:</strong> uploads are rate-limited and every check is recorded in our audit log (without the image).</li>
+        </ul>
+
+        <h2>5. Monitoring and improvement</h2>
+        <p>Staff review the audit log and any customer appeals regularly. We record incidents involving AI errors, investigate root causes, and update
+          the system or this policy as needed. Changes to the AI model or its instructions are tested before release.</p>
+
+        <h2>6. Questions or concerns</h2>
+        <p>If you think an AI decision about you was wrong, or you have a question about how we use AI, message us from your account or contact us {{contact_email}}.
+          A person will review it.</p>
+      </div>
+    </section>

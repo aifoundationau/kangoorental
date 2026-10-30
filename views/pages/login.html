@@ -1,0 +1,19 @@
+    <section class="section">
+      <div class="container narrow">
+        <form class="card form-card" id="loginForm" novalidate>
+          <h1>Log in</h1>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" required>
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <p class="form-error" id="loginError" role="alert" hidden></p>
+          <button class="btn btn-block" type="submit" id="loginBtn">Log in</button>
+          <p class="center hint">New here? <a href="/register">Create an account</a></p>
+          <p class="center hint">Forgotten your password? Contact us and our team will help you reset it.</p>
+        </form>
+      </div>
+    </section>
