@@ -199,6 +199,8 @@ legend { font-weight: 700; padding: 0 .4rem; }
 .quote-tokens dd { color: var(--blue); font-size: 1.1rem; font-weight: 800; }
 .confirm-box { border-top: 1px solid var(--line); margin-top: 1rem; padding-top: 1rem; }
 .confirm-box[hidden] { display: none; }
+.van-spec-badge { background: #fff8e6; color: #7a4f01; border: 1px solid #f2db99; border-radius: 8px; padding: .65rem .85rem; font-size: .88rem; margin-bottom: .85rem; line-height: 1.45; }
+.van-spec-badge strong { color: #523400; }
 .checklist ul, .status-list { list-style: none; padding: 0; margin: 0 0 .5rem; }
 .checklist li, .status-list li { padding: .35rem 0 .35rem 1.7rem; position: relative; }
 .checklist li::before, .status-list li::before { position: absolute; left: 0; top: .35rem; font-weight: 800; }

@@ -54,7 +54,7 @@ const readView = (name) => fs.readFileSync(new URL(`./views/${name}`, import.met
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const PAGES = {
-  '/': { view: 'pages/home.html', title: 'Renault Kangoo van hire in Wishart, Brisbane', script: 'home.js' },
+  '/': { view: 'pages/home.html', title: 'Renault Kangoo MAXI van hire in Wishart, Brisbane', script: 'home.js' },
   '/login': { view: 'pages/login.html', title: 'Log in', script: 'login.js' },
   '/register': { view: 'pages/register.html', title: 'Create your account', script: 'register.js' },
   '/account': { view: 'pages/account.html', title: 'My account', script: 'account.js', auth: 'user' },

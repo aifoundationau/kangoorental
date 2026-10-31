@@ -2,9 +2,8 @@
       <div class="container hero-grid">
         <div class="hero-copy">
           <p class="eyebrow">Van hire &middot; {{pickup_label}}</p>
-          <h1>Hire a Renault Kangoo for the day.</h1>
-          <p class="lead">A compact, easy-to-park van for moves, deliveries, markets and trips to the tip.
-            Book online in 24-hour blocks and pick up from Wishart.</p>
+          <h1>Hire a Renault Kangoo MAXI for the day.</h1>
+          <p class="lead">Long-wheelbase Maxi with extended cargo volume, economical 1.5L turbo diesel, and 6-speed manual transmission. Book online in 24-hour blocks and pick up from Wishart.</p>
           <div class="price-tag" id="heroPrice" aria-live="polite">
             <span class="price-main">A$90.00</span><span class="price-sub">+ GST per 24 hours</span>
           </div>
@@ -82,6 +81,9 @@
             <p class="hint" id="qRate"></p>
 
             <div class="confirm-box" id="confirmBox" hidden>
+              <div class="van-spec-badge" role="note" data-testid="van-spec-notice" data-agent-id="van-spec-notice">
+                <strong>Important note:</strong> This vehicle is a <strong>6-speed manual</strong> and requires <strong>Diesel fuel</strong> only.
+              </div>
               <div class="checklist" id="checklist"></div>
               <label class="check">
                 <input type="checkbox" id="bkDisclaimer">
@@ -106,15 +108,16 @@
     <section class="section" aria-labelledby="vanTitle">
       <div class="container van-grid">
         <figure class="van-photo">
-          <img src="/images/kangoo-side.jpeg" alt="White Renault Kangoo van, side view showing the sliding side door" width="1024" height="572" loading="lazy">
+          <img src="/images/kangoo-side.jpeg" alt="White Renault Kangoo MAXI van, side view showing the sliding side door" width="1024" height="572" loading="lazy">
         </figure>
         <div>
-          <h2 id="vanTitle">The van</h2>
+          <h2 id="vanTitle">The van: Renault Kangoo MAXI</h2>
           <ul class="feature-list">
-            <li><strong>Renault Kangoo</strong> compact van: easy to drive and park around Brisbane.</li>
-            <li><strong>Sliding side door</strong> for loading from the kerb.</li>
-            <li>Good for <strong>small moves, deliveries, markets and tip runs</strong>.</li>
-            <li>Drive it on a normal <strong>car (C class) licence</strong>.</li>
+            <li><strong>Renault Kangoo MAXI</strong>: long-wheelbase version with extended cargo capacity (up to 4 m&sup3;) for large furniture, long lengths and equipment.</li>
+            <li><strong>6-speed manual transmission</strong>: smooth manual gearbox (manual driving competency required).</li>
+            <li><strong>1.5L turbo diesel</strong>: high-torque efficiency and outstanding fuel economy (Diesel fuel only).</li>
+            <li><strong>Sliding side door &amp; rear barn doors</strong> for fast, easy loading from the kerb.</li>
+            <li>Drive it on a standard <strong>manual car (C class) licence</strong>.</li>
             <li>Pick up and return at our <strong>{{pickup_label}}</strong> depot.</li>
           </ul>
         </div>
