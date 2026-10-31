@@ -69,6 +69,7 @@ section[id], .tab-panel { scroll-margin-top: 76px; }
 .nav-auth { display: inline-flex; align-items: center; gap: 1rem; }
 .nav-auth[hidden] { display: none; }
 .google-nav-btn { display: inline-flex; align-items: center; min-height: 40px; }
+.google-nav-btn .google-fallback-btn { border-radius: 999px; }
 .nav-toggle { display: none; background: none; border: 1px solid var(--line); border-radius: 8px; padding: .45rem .8rem; font: inherit; }
 .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--ink-2); cursor: pointer; }
 .link-button:hover { color: var(--blue); }

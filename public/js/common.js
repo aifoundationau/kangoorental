@@ -128,11 +128,12 @@ export async function renderGoogleButton(el, onCredential, text = 'continue_with
     auto_select: false,
   });
   window.google.accounts.id.renderButton(el, {
+    type: 'standard',
     theme: opts.theme || 'outline',
-    size: opts.size || 'large',
+    size: opts.size || 'medium',
     text,
-    shape: opts.shape || 'rectangular',
-    logo_alignment: opts.logo_alignment || 'center',
+    shape: opts.shape || 'pill',
+    logo_alignment: opts.logo_alignment || 'left',
     width: opts.width || Math.min(400, Math.max(200, el.clientWidth || 240)),
   });
   el.closest('[data-google]')?.removeAttribute('hidden');
@@ -230,10 +231,10 @@ async function initNavGoogle() {
     } catch (err) {
       toast(err.message || 'Google sign-in failed. Please try again.', 'error');
     }
-  }, 'signin_with', { size: 'medium', width: 200 });
+  }, 'signin_with', { size: 'medium', width: 215, shape: 'pill', theme: 'outline' });
 
   if (!ok) {
-    btn.innerHTML = '<a href="/login" class="btn btn-small">Log in</a>';
+    btn.innerHTML = '<a href="/login" class="btn btn-small google-fallback-btn" data-testid="nav-login-fallback" data-agent-id="nav-login-fallback">Log in</a>';
   }
 }
 
