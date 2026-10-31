@@ -107,11 +107,11 @@ function renderProfile() {
 }
 
 function renderTokens() {
-  $('tokRate').textContent = `US$1 = A$${formatRate(cfg.fx.rate)}`;
+  $('tokRate').textContent = `US$1 = AUD$${formatRate(cfg.fx.rate)}`;
   const q = cfg.dailyQuote;
   $('tokDay').textContent = `${formatPrice(quotePrices(q).total)} inc GST = ${formatTokens(q.tokenCents)} tokens`;
   $('packs').innerHTML = cfg.tokenPacks.map((n) => {
-    const days = Math.floor((n * 100) / q.tokenCents);
+    const days = Math.ceil((n * 100) / q.tokenCents);
     // Stripe charges US$1 per token; Australian and New Zealand visitors see the approximate AUD cost.
     const cost = pricingCurrency() === 'AUD' ? `≈ ${formatAud(n * 100 * cfg.fx.rate)}` : formatUsd(n * 100);
     return `<button class="pack" type="button" data-tokens="${n}">
@@ -135,7 +135,7 @@ function bookingCard(b, { compact = false } = {}) {
     <header><strong>${escapeHtml(b.ref)}</strong><span class="status-pill ${b.status === 'cancelled' ? 'bad' : b.status === 'completed' ? '' : 'ok'}">${statusLabel}</span></header>
     <p><strong>Pickup:</strong> ${formatDateTime(b.startAt)}<br><strong>Return:</strong> ${formatDateTime(b.endAt)}</p>
     ${compact ? '' : `<p class="hint">${b.days} × 24 hours &middot; ${formatPrice({ aud: b.totalCents, usd: b.tokenCents })} inc GST &middot; ${formatTokens(b.tokenCents)} tokens
-      (at US$1 = A$${formatRate(b.fxRate)})${b.refundedTokenCents ? ` &middot; ${formatTokens(b.refundedTokenCents)} tokens refunded` : ''}</p>`}
+      (at US$1 = AUD$${formatRate(b.fxRate)})${b.refundedTokenCents ? ` &middot; ${formatTokens(b.refundedTokenCents)} tokens refunded` : ''}</p>`}
     ${canCancel && !compact ? `<button class="btn btn-small btn-ghost" data-cancel="${b.id}">Cancel booking</button>` : ''}
   </article>`;
 }

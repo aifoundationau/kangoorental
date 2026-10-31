@@ -53,8 +53,9 @@ export function ageOn(dobStr, onDateStr) {
   return ty - y - (tm < m || (tm === m && td < d) ? 1 : 0);
 }
 
-/** Rounds down to a whole number, ignoring floating-point dust (e.g. 164.99999999999997 counts as 165). */
-export const floorWhole = (n) => Math.floor(n + 1e-9) || 0; // `|| 0` turns -0 into 0
+/** Rounds up to a whole number, ignoring floating-point dust (e.g. 164.00000000000003 counts as 164). */
+export const ceilWhole = (n) => Math.ceil(n - 1e-9) || 0; // `|| 0` turns -0 into 0
+export const floorWhole = ceilWhole; // backward-compatibility alias
 
 /** The price list as numbers: total AUD ex GST for 1, 2, 3... days (see DEFAULT_SETTINGS.price_table). */
 export function priceTable(settings) {
@@ -70,7 +71,7 @@ export const maxRentalDays = (settings) => Math.min(num(settings, 'max_rental_da
  * basis 'aud':    AUD prices are fixed by the price list -> tokens = AUD / rate
  * basis 'tokens': the daily token rate is fixed, and longer hires follow the price list's steps -> AUD = tokens x rate
  * GST is added on the AUD amount, and the customer is charged the GST-inclusive total in tokens.
- * Every dollar and token amount is a whole number, rounded down. Amounts are returned in cents to match stored records.
+ * Every dollar and token amount is a whole number, rounded up. Amounts are returned in cents to match stored records.
  * `days` must be between 1 and maxRentalDays(settings).
  */
 export function quote(settings, days, fxRate) {
@@ -85,16 +86,16 @@ export function quote(settings, days, fxRate) {
   if (basis === 'aud') {
     listAud = table[0] * days;
     subtotalAud = table[days - 1];
-    listTokens = floorWhole(listAud / fxRate);
-    subtotalTokens = floorWhole(subtotalAud / fxRate);
+    listTokens = ceilWhole(listAud / fxRate);
+    subtotalTokens = ceilWhole(subtotalAud / fxRate);
   } else {
-    const daily = floorWhole(num(settings, 'daily_rate_token_cents') / 100);
+    const daily = ceilWhole(num(settings, 'daily_rate_token_cents') / 100);
     listTokens = daily * days;
-    subtotalTokens = floorWhole((daily * table[days - 1]) / table[0]);
-    listAud = floorWhole(listTokens * fxRate);
-    subtotalAud = floorWhole(subtotalTokens * fxRate);
+    subtotalTokens = ceilWhole((daily * table[days - 1]) / table[0]);
+    listAud = ceilWhole(listTokens * fxRate);
+    subtotalAud = ceilWhole(subtotalTokens * fxRate);
   }
-  const gstAud = floorWhole((subtotalAud * gstBp) / 10000);
+  const gstAud = ceilWhole((subtotalAud * gstBp) / 10000);
   const totalAud = subtotalAud + gstAud;
   return {
     days,
@@ -108,7 +109,7 @@ export function quote(settings, days, fxRate) {
     totalCents: totalAud * 100,
     listSubtotalTokenCents: listTokens * 100,
     subtotalTokenCents: subtotalTokens * 100,
-    tokenCents: floorWhole(totalAud / fxRate) * 100,
+    tokenCents: ceilWhole(totalAud / fxRate) * 100,
   };
 }
 

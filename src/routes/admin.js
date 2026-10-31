@@ -64,7 +64,7 @@ const SETTING_RULES = {
   price_table: (v) => {
     const prices = String(v).split(',').map((s) => floorWhole(Number(s.trim())));
     if (prices.length < 1 || prices.length > 30 || prices.some((n) => !(n >= 1 && n <= 100000))) {
-      throw new HttpError(400, 'Enter a price of at least A$1 for every hire length.');
+      throw new HttpError(400, 'Enter a price of at least AUD$1 for every hire length.');
     }
     if (prices.some((n, i) => i > 0 && n < prices[i - 1])) throw new HttpError(400, "A longer hire can't cost less than a shorter one.");
     return prices.join(',');

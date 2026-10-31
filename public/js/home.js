@@ -151,8 +151,8 @@ function renderQuote() {
   $('qTotal').textContent = formatPrice(p.total);
   $('qTokens').textContent = `${formatTokens(q.tokenCents)} tokens`;
   $('qRate').textContent = pricingCurrency() === 'AUD'
-    ? `Converted at today's exchange rate, US$1 = A$${formatRate(q.fxRate)}. Amounts are rounded down to whole dollars and tokens.`
-    : '1 token = US$1. Amounts are rounded down to whole dollars and tokens.';
+    ? `Converted at today's exchange rate, US$1 = AUD$${formatRate(q.fxRate)}. Amounts are rounded up to whole dollars and tokens.`
+    : '1 token = US$1. Amounts are rounded up to whole dollars and tokens.';
 }
 
 function renderPricing() {
@@ -434,7 +434,7 @@ async function loadHub() {
     $('hubMap').replaceChildren(frame);
     $('hubDirections').href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-    $('hubFx').textContent = `US$1 = A$${formatRate(hub.fx.rate)}`;
+    $('hubFx').textContent = `US$1 = AUD$${formatRate(hub.fx.rate)}`;
     $('hubFxSource').textContent = hub.fx.mode === 'live'
       ? `Market rate from ${hub.fx.source}${hub.fx.date ? `, ${hub.fx.date}` : ''}.`
       : hub.fx.source;

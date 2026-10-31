@@ -47,12 +47,12 @@ export const isStaff = (user) => user && (user.role === 'admin' || user.role ===
 
 /* ---------- Formatting ---------- */
 
-// Every dollar and token amount is shown as a whole number, rounded down. Exchange rates keep their decimals.
-const whole = (cents) => Math.floor(cents / 100 + 1e-9) || 0; // `|| 0` turns -0 into 0
-export const formatAud = (cents) => `A$${whole(cents).toLocaleString('en-AU')}`;
-export const formatUsd = (cents) => `US$${whole(cents).toLocaleString('en-US')}`;
-export const formatTokens = (tokenCents) => whole(tokenCents).toLocaleString('en-AU');
-export const formatRate = (rate) => Number(rate).toFixed(4);
+// Every dollar and token amount is shown as a whole number, rounded up. No decimals ever show.
+const ceilWhole = (cents) => Math.ceil(cents / 100 - 1e-9) || 0; // `|| 0` turns -0 into 0
+export const formatAud = (cents) => `AUD$${ceilWhole(cents).toLocaleString('en-AU')}`;
+export const formatUsd = (cents) => `US$${ceilWhole(cents).toLocaleString('en-US')}`;
+export const formatTokens = (tokenCents) => ceilWhole(tokenCents).toLocaleString('en-AU');
+export const formatRate = (rate) => Math.ceil(Number(rate) - 1e-9).toString();
 
 /** A price in the visitor's pricing currency: AUD in Australia and New Zealand, USD everywhere else. */
 export const formatPrice = ({ aud: audCents, usd: usdCents }) => (pricingCurrency() === 'AUD' ? formatAud(audCents) : formatUsd(usdCents));
@@ -243,7 +243,7 @@ function updateNav(user) {
   document.querySelectorAll('[data-auth="user"]').forEach((el) => { el.hidden = !user; });
   const account = document.getElementById('navAccount');
   if (account && user) {
-    account.firstChild.textContent = isStaff(user) ? 'Admin panel ' : 'My account ';
+    account.textContent = isStaff(user) ? 'Admin panel' : 'My account';
     account.href = isStaff(user) ? '/admin' : '/account';
   }
   const unread = document.getElementById('navUnread');
@@ -251,7 +251,23 @@ function updateNav(user) {
     unread.hidden = !user?.unreadMessages;
     unread.textContent = user?.unreadMessages || '';
   }
-  if (!user) {
+  if (user) {
+    const img = document.getElementById('navAvatarImg');
+    const initial = document.getElementById('navAvatarInitial');
+    const name = document.getElementById('userMenuName');
+    const email = document.getElementById('userMenuEmail');
+    if (name) name.textContent = user.fullName || user.email || 'User';
+    if (email) email.textContent = user.email || '';
+    if (user.picture && img) {
+      img.src = user.picture;
+      img.hidden = false;
+      if (initial) initial.hidden = true;
+    } else if (initial) {
+      initial.textContent = (user.fullName?.[0] || user.email?.[0] || 'U').toUpperCase();
+      initial.hidden = false;
+      if (img) img.hidden = true;
+    }
+  } else {
     initNavGoogle();
   }
 }
@@ -265,6 +281,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const open = nav.classList.toggle('open');
     toggle.setAttribute('aria-expanded', String(open));
   });
+
+  const avatarBtn = document.getElementById('userAvatarBtn');
+  const dropdown = document.getElementById('userMenuDropdown');
+  if (avatarBtn && dropdown) {
+    avatarBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = dropdown.hidden;
+      dropdown.hidden = !open;
+      avatarBtn.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', (e) => {
+      if (!dropdown.hidden && !e.target.closest('#userMenuWrapper')) {
+        dropdown.hidden = true;
+        avatarBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !dropdown.hidden) {
+        dropdown.hidden = true;
+        avatarBtn.setAttribute('aria-expanded', 'false');
+        avatarBtn.focus();
+      }
+    });
+  }
 
   document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     await api('/auth/logout', { method: 'POST' }).catch(() => {});

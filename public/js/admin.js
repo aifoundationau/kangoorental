@@ -341,18 +341,18 @@ function renderCalc({ fx, dailyQuote: q, list }) {
   const steps = q.priceBasis === 'aud'
     ? [
       `Daily rate: <strong>${formatAud(q.subtotalCents)}</strong> ex GST (fixed in AUD).`,
-      `Convert to USD at US$1 = A$${rate}: ${formatAud(q.subtotalCents)} ÷ ${rate} = <strong>${formatTokens(q.subtotalTokenCents)} tokens</strong> ex GST.`,
+      `Convert to USD at US$1 = AUD$${rate}: ${formatAud(q.subtotalCents)} ÷ ${rate} = <strong>${formatTokens(q.subtotalTokenCents)} tokens</strong> ex GST.`,
       `Add ${gstPct}% GST on the AUD price: ${formatAud(q.subtotalCents)} + ${formatAud(q.gstCents)} = <strong>${formatAud(q.totalCents)}</strong>.`,
       `Customer pays ${formatAud(q.totalCents)} ÷ ${rate} = <strong>${formatTokens(q.tokenCents)} tokens</strong> (US$${formatTokens(q.tokenCents)}).`,
     ]
     : [
       `Daily rate: <strong>${formatTokens(q.subtotalTokenCents)} tokens</strong> ex GST = US$${formatTokens(q.subtotalTokenCents)} (fixed in tokens).`,
-      `Convert to AUD at US$1 = A$${rate}: US$${formatTokens(q.subtotalTokenCents)} × ${rate} = <strong>${formatAud(q.subtotalCents)}</strong> ex GST.`,
+      `Convert to AUD at US$1 = AUD$${rate}: US$${formatTokens(q.subtotalTokenCents)} × ${rate} = <strong>${formatAud(q.subtotalCents)}</strong> ex GST.`,
       `Add ${gstPct}% GST: ${formatAud(q.subtotalCents)} + ${formatAud(q.gstCents)} = <strong>${formatAud(q.totalCents)}</strong> rental price.`,
       `Customer pays ${formatAud(q.totalCents)} ÷ ${rate} = <strong>${formatTokens(q.tokenCents)} tokens</strong> (US$${formatTokens(q.tokenCents)}).`,
     ];
   $('calcSteps').innerHTML = steps.map((s) => `<li>${s}</li>`).join('');
-  $('hdrFx').textContent = `US$1 = A$${rate}`;
+  $('hdrFx').textContent = `US$1 = AUD$${rate}`;
 }
 
 function renderPricing(view) {
@@ -364,15 +364,15 @@ function renderPricing(view) {
   $('pList').innerHTML = String(s.price_table).split(',').map((price, i) => `
     <div class="price-list-row">
       <label for="pList${i + 1}">${i + 1} day${i ? 's' : ''}</label>
-      <span class="price-input"><span aria-hidden="true">A$</span><input id="pList${i + 1}" type="number" min="1" step="1" required value="${Number(price)}"
+      <span class="price-input"><span aria-hidden="true">AUD$</span><input id="pList${i + 1}" type="number" min="1" step="1" required value="${Number(price)}"
         data-testid="price-list-${i + 1}" data-agent-id="price-list-${i + 1}" aria-label="Price for ${i + 1} day${i ? 's' : ''}, whole AUD before GST"></span>
       <output id="pListOut${i + 1}" class="hint"></output>
     </div>`).join('');
-  $('pTok').value = Math.floor(Number(s.daily_rate_token_cents) / 100);
+  $('pTok').value = Math.ceil(Number(s.daily_rate_token_cents) / 100);
   $('pGst').value = Number(s.gst_rate_bp) / 100;
   $('pManual').value = s.fx_manual_rate;
   $('pPacks').value = s.token_packs;
-  $('liveRate').textContent = s.fx_live_rate ? `A$${formatRate(s.fx_live_rate)}` : 'Not loaded yet';
+  $('liveRate').textContent = s.fx_live_rate ? `AUD$${formatRate(s.fx_live_rate)}` : 'Not loaded yet';
   $('liveRateInfo').textContent = s.fx_live_rate
     ? `${s.fx_live_source}${s.fx_live_date ? `, rate date ${s.fx_live_date}` : ''}. Checked ${formatStamp(s.fx_live_checked_at)}.`
     : 'The live rate loads automatically when the server starts.';
@@ -610,7 +610,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('[data-super]').forEach((el) => { el.hidden = !superadmin; });
   bindEvents();
   bindHandover();
-  api('/admin/settings').then((v) => { $('hdrFx').textContent = `US$1 = A$${formatRate(v.fx.rate)}`; }).catch(() => {});
+  api('/admin/settings').then((v) => { $('hdrFx').textContent = `US$1 = AUD$${formatRate(v.fx.rate)}`; }).catch(() => {});
   showTab(location.hash.slice(1) || 'dashboard');
   window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 });

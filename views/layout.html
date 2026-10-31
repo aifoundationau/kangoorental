@@ -31,8 +31,22 @@
           <noscript><a href="/login">Log in</a></noscript>
         </span>
         <span class="nav-auth" data-auth="user" hidden>
-          <a href="/account" id="navAccount">My account <span class="badge" id="navUnread" hidden></span></a>
-          <button class="link-button" id="logoutBtn" type="button">Log out</button>
+          <div class="user-menu-wrapper" id="userMenuWrapper">
+            <button class="user-avatar-btn" id="userAvatarBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="User account menu" data-testid="user-avatar-btn" data-agent-id="user-avatar-btn">
+              <img id="navAvatarImg" class="nav-avatar-img" src="" alt="Profile picture" hidden>
+              <span id="navAvatarInitial" class="nav-avatar-initial">U</span>
+              <span class="badge" id="navUnread" hidden></span>
+            </button>
+            <div class="user-menu-dropdown" id="userMenuDropdown" role="menu" hidden>
+              <div class="user-menu-header">
+                <strong id="userMenuName">User</strong>
+                <small id="userMenuEmail">user@example.com</small>
+              </div>
+              <hr class="user-menu-divider">
+              <a class="user-menu-item" id="navAccount" href="/account" role="menuitem" data-testid="menu-item-account" data-agent-id="menu-item-account">Admin panel</a>
+              <button class="user-menu-item user-menu-logout" id="logoutBtn" type="button" role="menuitem" data-testid="menu-item-logout" data-agent-id="menu-item-logout">Log out</button>
+            </div>
+          </div>
         </span>
       </nav>
     </div>

@@ -50,6 +50,7 @@ export function publicUser(u, extra = {}) {
     tokenCents: u.tokenCents ?? 0,
     hasPassword: u.hasPassword ?? Boolean(u.passwordHash),
     googleLinked: Boolean(u.googleSub),
+    picture: u.picture || '',
     createdAt: u.createdAt,
     ...extra,
   };
@@ -205,12 +206,18 @@ export async function superadminFromGoogle(google, ip) {
   let user = (await findUserByGoogleSub(google.sub)) || (await findUserByEmail(google.email));
   if (user?.googleSub && user.googleSub !== google.sub) throw new HttpError(409, 'This email is linked to a different Google account.');
   if (!user) {
-    const id = await createUser({ role: 'superadmin', email: google.email, fullName: google.name || 'Superadmin', googleSub: google.sub });
+    const id = await createUser({ role: 'superadmin', email: google.email, fullName: google.name || 'Superadmin', googleSub: google.sub, picture: google.picture || '' });
     audit(id, 'superadmin.create', `${google.email} (Google)`, ip);
     return getUser(id);
   }
-  if (user.role !== 'superadmin' || user.passwordHash || user.disabled || !user.googleSub) {
-    await col.users.doc(user.id).update({ role: 'superadmin', googleSub: google.sub, passwordHash: FieldValue.delete(), disabled: false });
+  const updates = {};
+  if (user.role !== 'superadmin') updates.role = 'superadmin';
+  if (user.googleSub !== google.sub) updates.googleSub = google.sub;
+  if (user.passwordHash) updates.passwordHash = FieldValue.delete();
+  if (user.disabled) updates.disabled = false;
+  if (google.picture && user.picture !== google.picture) updates.picture = google.picture;
+  if (Object.keys(updates).length) {
+    await col.users.doc(user.id).update(updates);
     await destroyAllSessions(user.id);
     audit(user.id, 'superadmin.promote', `${google.email} (Google; was ${user.role})`, ip);
     return getUser(user.id);
@@ -234,7 +241,9 @@ router.post('/auth/google', authLimiter, async (req, res) => {
     user = await findUserByEmail(google.email);
     if (user && !user.disabled) {
       if (user.googleSub && user.googleSub !== google.sub) throw new HttpError(409, 'This email is linked to a different Google account.');
-      await col.users.doc(user.id).update({ googleSub: google.sub });
+      const linkUpdates = { googleSub: google.sub };
+      if (google.picture && user.picture !== google.picture) linkUpdates.picture = google.picture;
+      await col.users.doc(user.id).update(linkUpdates);
       audit(user.id, 'google.link', google.email, req.ip);
     }
   }
@@ -244,6 +253,7 @@ router.post('/auth/google', authLimiter, async (req, res) => {
       email: google.email,
       fullName: google.name || google.email.split('@')[0],
       googleSub: google.sub,
+      picture: google.picture || '',
       acceptedTermsAt: nowIso(),
     });
     audit(id, 'register.google', `${google.email}`, req.ip);

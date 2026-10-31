@@ -23,5 +23,10 @@ export async function verifyGoogleCredential(credential) {
   if (!payload?.sub || !payload.email || payload.email_verified !== true) {
     throw new HttpError(401, 'Your Google account email is not verified.');
   }
-  return { sub: payload.sub, email: payload.email.toLowerCase(), name: payload.name || '' };
+  return {
+    sub: payload.sub,
+    email: payload.email.toLowerCase(),
+    name: payload.name || '',
+    picture: payload.picture || '',
+  };
 }
