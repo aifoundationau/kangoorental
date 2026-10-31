@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema';
+import { GoogleGenAI } from '@google/genai';
 import { config } from './config.js';
 import { HttpError } from './security.js';
 import { brisbaneToday } from './util.js';
@@ -7,7 +6,7 @@ import { brisbaneToday } from './util.js';
 // Licence photos are processed in memory only. Nothing in this module writes the image anywhere;
 // the buffer is passed to the AI provider for a single verification request and then released.
 
-const client = config.licenceAiEnabled ? new Anthropic() : null;
+const ai = config.licenceAiEnabled ? new GoogleGenAI({ apiKey: config.geminiApiKey }) : null;
 
 const LicenceSchema = {
   type: 'object',
@@ -63,7 +62,7 @@ export async function verifyLicence(imageBuffer, person) {
   const mediaType = detectImageType(imageBuffer);
   if (!mediaType) throw new HttpError(400, 'Licence photo must be a JPEG, PNG or WebP image.');
 
-  if (!client) {
+  if (!ai) {
     return {
       status: 'pending',
       method: 'manual',
@@ -74,29 +73,25 @@ export async function verifyLicence(imageBuffer, person) {
 
   let response;
   try {
-    response = await client.beta.messages.parse({
+    response = await ai.models.generateContent({
       model: config.licenceModel,
-      max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      output_config: { effort: 'medium', format: jsonSchemaOutputFormat(LicenceSchema) },
-      system: SYSTEM_PROMPT,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBuffer.toString('base64') } },
-          { type: 'text', text: 'Extract the details from this driver licence.' },
-        ],
-      }],
+      contents: [
+        {
+          inlineData: {
+            mimeType: mediaType,
+            data: imageBuffer.toString('base64'),
+          },
+        },
+        'Extract the details from this driver licence.',
+      ],
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        responseJsonSchema: LicenceSchema,
+      },
     });
   } catch (err) {
-    if (err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError || err instanceof Anthropic.APIConnectionError) {
-      console.error('[licence] AI provider unavailable:', err.message);
-    } else if (err instanceof Anthropic.APIError) {
-      console.error(`[licence] AI request failed (${err.status}):`, err.message);
-    } else {
-      console.error('[licence] Unexpected error:', err);
-    }
+    console.error('[licence] Gemini AI request failed:', err?.message || err);
     return {
       status: 'pending',
       method: 'manual',
@@ -105,7 +100,10 @@ export async function verifyLicence(imageBuffer, person) {
     };
   }
 
-  if (response.stop_reason === 'refusal' || !response.parsed_output) {
+  let x;
+  try {
+    x = JSON.parse(response.text);
+  } catch {
     return {
       status: 'pending',
       method: 'ai',
@@ -114,7 +112,14 @@ export async function verifyLicence(imageBuffer, person) {
     };
   }
 
-  const x = response.parsed_output;
+  if (!x) {
+    return {
+      status: 'pending',
+      method: 'ai',
+      notes: 'The licence could not be read automatically. An admin will review it.',
+      extracted: null,
+    };
+  }
   const problems = [];
   if (!x.is_drivers_licence) {
     return { status: 'rejected', method: 'ai', notes: 'The photo does not appear to be a driver licence. Please upload a clear photo of the front of your licence.', extracted: x };

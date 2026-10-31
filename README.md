@@ -3,7 +3,7 @@
 Renault Kangoo van hire in Wishart, Brisbane. Customers register (Brisbane area only), get their driver licence checked,
 add their insurance, buy tokens and book the van by the 24 hours. Staff run everything from the admin panel.
 
-Node.js + Express, Google Cloud Firestore (database `kangoorental`), Claude for licence checks, Stripe for payments.
+Node.js + Express, Google Cloud Firestore (database `kangoorental`), Google Gemini for licence checks, Stripe for payments.
 
 ## Run it locally
 
@@ -16,7 +16,7 @@ npm run dev:emulator      # terminal 2: app on http://localhost:3000 using the e
 ```
 
 On first start the app creates a superadmin and prints the login. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env`
-to choose them. Without Stripe or Anthropic keys, payments run in **demo mode** and licences go to **manual review**.
+to choose them. Without Stripe or Gemini keys, payments run in **demo mode** and licences go to **manual review**.
 
 To use the live database instead: copy `.env.example` to `.env`, run `gcloud auth application-default login`, then `npm start`.
 
@@ -49,10 +49,9 @@ and amounts it was charged at; price changes never affect confirmed bookings.
 
 ## Licence checks
 
-The photo is kept in memory, sent once to Claude (`claude-opus-5-5`) to read the licence, compared with the details the
+The photo is kept in memory, sent once to Google Gemini (`gemini-3.8-flash`) to read the licence, compared with the details the
 customer typed, then discarded. **It is never written to disk or the database.** Mismatches are rejected with a reason;
-provisional licences, possible tampering and any AI outage go to manual review. Set `ANTHROPIC_API_KEY` to enable.
-Requests opt into server-side refusal fallback (`fallbacks: "default"`).
+provisional licences, possible tampering and any AI outage go to manual review. Set `GEMINI_API_KEY` to enable.
 
 ## Before going live
 

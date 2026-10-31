@@ -53,9 +53,10 @@ export const config = {
     ? env.ALLOW_DEMO_PAYMENTS === 'true'
     : env.NODE_ENV !== 'production',
 
-  // Claude licence verification (optional). Without credentials, licences go to manual admin review.
-  licenceAiEnabled: Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) && env.LICENCE_AI !== 'off',
-  licenceModel: env.LICENCE_MODEL || 'claude-opus-5-5',
+  // Gemini licence verification (optional). Without credentials, licences go to manual admin review.
+  geminiApiKey: env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '',
+  licenceAiEnabled: Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY) && env.LICENCE_AI !== 'off',
+  licenceModel: env.LICENCE_MODEL || 'gemini-3.8-flash',
 
   // "Sign in with Google" (Google Identity Services). The client ID is public; no secret is needed because the
   // server verifies Google's signed ID token. Add each site origin to the client's Authorised JavaScript origins.
