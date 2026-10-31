@@ -97,16 +97,16 @@ router.post('/account/delete', async (req, res) => {
 
 router.post('/tokens/checkout', async (req, res) => {
   if (req.user.role !== 'supporter') throw new HttpError(403, 'Only customers can buy tokens.');
-  // Whole tokens only, USD $1.00 each.
   const tokens = int(req.body?.tokens, { field: 'Tokens', min: 1, max: 5000 });
+  const days = req.body?.days ? int(req.body?.days, { field: 'Days', min: 1, max: 30 }) : null;
 
   if (paymentsMode === 'stripe') {
-    const session = await createCheckout(req.user, tokens);
+    const session = await createCheckout(req.user, tokens, { days });
     audit(req.user.id, 'tokens.checkout', `${tokens} tokens ${session.id}`, req.ip);
     return res.json({ url: session.url });
   }
   if (paymentsMode === 'demo') {
-    await creditTokens({ userId: req.user.id, tokens, provider: 'demo', note: 'Demo purchase - no money taken' });
+    await creditTokens({ userId: req.user.id, tokens, provider: 'demo', amountCents: tokens * 100, currency: 'AUD', note: 'Demo purchase - no money taken' });
     return res.json({ demo: true, user: publicUser(await getUser(req.user.id)) });
   }
   throw new HttpError(503, 'Online payments are not available right now. Please message us.');
