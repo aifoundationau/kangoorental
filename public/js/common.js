@@ -113,7 +113,7 @@ function loadGoogleScript() {
 }
 
 /** Renders Google's button into `el` and calls onCredential(idToken) after sign-in. Returns false if unavailable. */
-export async function renderGoogleButton(el, onCredential, text = 'continue_with') {
+export async function renderGoogleButton(el, onCredential, text = 'continue_with', opts = {}) {
   const cfg = await getConfig().catch(() => null);
   if (!el || !cfg?.googleClientId) return false;
   try {
@@ -128,8 +128,12 @@ export async function renderGoogleButton(el, onCredential, text = 'continue_with
     auto_select: false,
   });
   window.google.accounts.id.renderButton(el, {
-    theme: 'outline', size: 'large', text, shape: 'rectangular', logo_alignment: 'center',
-    width: Math.min(400, Math.max(240, el.clientWidth || 320)),
+    theme: opts.theme || 'outline',
+    size: opts.size || 'large',
+    text,
+    shape: opts.shape || 'rectangular',
+    logo_alignment: opts.logo_alignment || 'center',
+    width: opts.width || Math.min(400, Math.max(200, el.clientWidth || 240)),
   });
   el.closest('[data-google]')?.removeAttribute('hidden');
   return true;
@@ -203,6 +207,36 @@ export function setBusy(button, busy, label) {
   }
 }
 
+let navGoogleInit = false;
+async function initNavGoogle() {
+  const btn = document.getElementById('navGoogleBtn');
+  if (!btn || navGoogleInit) return;
+  navGoogleInit = true;
+  const ok = await renderGoogleButton(btn, async (credential) => {
+    try {
+      const r = await api('/auth/google', { method: 'POST', body: { credential } });
+      if (r.user) {
+        mePromise = Promise.resolve(r.user);
+        updateNav(r.user);
+        const next = new URLSearchParams(location.search).get('next');
+        if (next && next.startsWith('/') && !next.startsWith('//')) {
+          window.location.href = next;
+        } else if (location.pathname === '/login' || location.pathname === '/register') {
+          window.location.href = isStaff(r.user) ? '/admin' : '/account';
+        } else {
+          window.location.reload();
+        }
+      }
+    } catch (err) {
+      toast(err.message || 'Google sign-in failed. Please try again.', 'error');
+    }
+  }, 'signin_with', { size: 'medium', width: 200 });
+
+  if (!ok) {
+    btn.innerHTML = '<a href="/login" class="btn btn-small">Log in</a>';
+  }
+}
+
 function updateNav(user) {
   document.querySelectorAll('[data-auth="guest"]').forEach((el) => { el.hidden = Boolean(user); });
   document.querySelectorAll('[data-auth="user"]').forEach((el) => { el.hidden = !user; });
@@ -215,6 +249,9 @@ function updateNav(user) {
   if (unread) {
     unread.hidden = !user?.unreadMessages;
     unread.textContent = user?.unreadMessages || '';
+  }
+  if (!user) {
+    initNavGoogle();
   }
 }
 

@@ -238,7 +238,17 @@ router.post('/auth/google', authLimiter, async (req, res) => {
       audit(user.id, 'google.link', google.email, req.ip);
     }
   }
-  if (!user) return res.json({ needsRegistration: true, profile: { email: google.email, fullName: google.name } });
+  if (!user) {
+    const id = await createUser({
+      role: 'supporter',
+      email: google.email,
+      fullName: google.name || google.email.split('@')[0],
+      googleSub: google.sub,
+      acceptedTermsAt: nowIso(),
+    });
+    audit(id, 'register.google', `${google.email}`, req.ip);
+    user = await getUser(id);
+  }
   if (user.disabled) {
     audit(user.id, 'login.failed', `${google.email} (Google, disabled)`, req.ip);
     throw new HttpError(401, 'This account is disabled. Please contact us.');
