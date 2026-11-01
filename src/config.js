@@ -75,23 +75,29 @@ export const config = {
 };
 
 // Defaults written to the settings table on first run; all editable by the superadmin.
-// Money model: tokens are USD $1.00 each (stored as hundredths, "token cents"). The rental price is
-// quoted in AUD; the USD->AUD rate converts between them and GST is added on the AUD amount.
+// Money model: default currency is AUD and default token price is 1 token = AUD$1 (stored as hundredths, "token cents").
+// The token amount for each product and service is customizable by the superadmin in token_table.
+// Visitors outside Australia and New Zealand see an AUD$1 -> USD currency conversion.
 export const DEFAULT_SETTINGS = {
   business_name: 'Kangoo Rental',
-  price_basis: 'aud',                // 'aud' = daily rate fixed in AUD; 'tokens' = daily rate fixed in tokens (USD)
-  daily_rate_token_cents: '6300',    // 63 tokens ex GST per 24 hours (used when price_basis = tokens)
+  price_basis: 'aud',                // 'aud' = AUD base pricing with customizable token_table per product/service
+  token_price_aud: '1',              // Default: 1 token = AUD$1
+  daily_rate_token_cents: '9900',    // 99 tokens inc GST for 1 day (1 token = AUD$1 default)
   gst_rate_bp: '1000',               // 10% GST, in basis points
-  // Price list: total whole AUD ex GST for a 1, 2, 3... day hire (superadmin edits it under Pricing). The 1-day price
-  // is the daily rate, and the list's length is the longest hire allowed.
-  price_table: '90,165,230,280,315,340,350',
+  // Price list: total whole AUD ex GST for a 1, 2, 3... day hire (superadmin edits it under Pricing).
+  price_table: '90,171,257,342,428,513,599',
+  // Customizable token amounts for each hire length (1..7 days). Defaults to 1 token per AUD$1 inc GST.
+  token_table: '99,189,283,377,471,565,659',
+  // Configured discount percentages for hire lengths 1..7 (day 1 is 0%, days 2..7 default to 5%).
+  discount_table: '0,5,5,5,5,5,5',
+  token_share_fee: '1',              // Token fee to transfer/share tokens with another member
   fx_mode: 'live',                   // 'live' = daily market rate, 'manual' = fx_manual_rate
-  fx_manual_rate: '1.4300',          // AUD per USD 1.00
+  fx_manual_rate: '0.7000',          // USD per AUD$1 (AUD$1 converted to USD for nations outside AU & NZ)
   fx_live_rate: '',
   fx_live_date: '',
   fx_live_source: '',
   fx_live_checked_at: '',
-  token_packs: '70,140,210,500',
+  token_packs: '100,200,300,500',
   min_driver_age: '21',
   registration_radius_km: '50',
   pickup_label: 'Wishart QLD 4122',

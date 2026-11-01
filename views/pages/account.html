@@ -40,8 +40,8 @@
 
           <div class="tab-panel" data-panel="tokens" role="tabpanel" hidden>
             <h2>Buy tokens</h2>
-            <p>1 token = <strong>US$1</strong>. Rental prices are set in Australian dollars and converted at the current exchange rate
-              (<span id="tokRate">–</span>). One day's rental is currently <strong id="tokDay">–</strong>.</p>
+            <p>Default token price: <strong>1 token = {{token_price_aud}}</strong>. All prices and tax invoices are in Australian dollars (<strong>AUD$</strong>).
+              <span id="tokRate"></span> One day's rental is currently <strong id="tokDay">–</strong>.</p>
             <div class="packs" id="packs"></div>
             <form class="inline-form" id="customTokens">
               <label for="customAmount">Or choose an amount</label>

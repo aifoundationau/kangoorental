@@ -6,7 +6,7 @@ import { checkServiceArea } from './auth.js';
 import { currentRate } from '../fx.js';
 import { config } from '../config.js';
 import {
-  quote, maxRentalDays, priceTable, handoverRules, isHandoverDay, dayLabel, brisbaneTime, brisbaneToday, addDays, bookingRef, int, validDate, str, DAY,
+  quote, maxRentalDays, priceTable, tokenTable, handoverRules, isHandoverDay, dayLabel, brisbaneTime, brisbaneToday, addDays, bookingRef, int, validDate, str, DAY,
 } from '../util.js';
 
 export const router = Router();
@@ -18,15 +18,24 @@ export function publicConfig(settings) {
   return {
     businessName: settings.business_name,
     priceBasis: settings.price_basis,
+    tokenPriceAud: num(settings, 'token_price_aud') || 1,
+    tokenShareFee: num(settings, 'token_share_fee') || 1,
     dailyRateAudCents: priceTable(settings)[0] * 100,
-    dailyRateTokenCents: num(settings, 'daily_rate_token_cents'),
+    dailyRateTokenCents: tokenTable(settings)[0] * 100,
     gstRateBp: num(settings, 'gst_rate_bp'),
     fx,
     dailyQuote: quote(settings, 1, fx.rate),
-    // Price for each hire length, before GST, in both currencies (USD = tokens).
+    // Price for each hire length, before GST, in AUD, converted USD (for outside AU/NZ), and customizable tokens.
     priceList: Array.from({ length: maxRentalDays(settings) }, (_, i) => {
       const q = quote(settings, i + 1, fx.rate);
-      return { days: i + 1, audCents: q.subtotalCents, usdCents: q.subtotalTokenCents };
+      return {
+        days: i + 1,
+        audCents: q.subtotalCents,
+        totalAudCents: q.totalCents,
+        usdCents: q.usdSubtotalCents,
+        totalUsdCents: q.usdTotalCents,
+        tokenCents: q.tokenCents,
+      };
     }),
     tokenPacks: settings.token_packs.split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0),
     minDriverAge: num(settings, 'min_driver_age'),

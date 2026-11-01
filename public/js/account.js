@@ -107,19 +107,25 @@ function renderProfile() {
 }
 
 function renderTokens() {
-  $('tokRate').textContent = `US$1 = AUD$${formatRate(cfg.fx.rate)}`;
+  const isIntl = pricingCurrency() === 'USD';
+  const tokenPriceAud = cfg.tokenPriceAud || 1;
+  const usdPerAud = cfg.fx?.usdPerAud || (cfg.fx?.rate > 1.05 ? 1 / cfg.fx.rate : cfg.fx?.rate || 0.7);
+  $('tokRate').textContent = isIntl
+    ? `International currency conversion: AUD$1 = US$${formatRate(usdPerAud)}.`
+    : '';
   const q = cfg.dailyQuote;
   $('tokDay').textContent = `${formatPrice(quotePrices(q).total)} inc GST = ${formatTokens(q.tokenCents)} tokens`;
   $('packs').innerHTML = cfg.tokenPacks.map((n) => {
-    const days = Math.ceil((n * 100) / q.tokenCents);
-    // Stripe charges US$1 per token; Australian and New Zealand visitors see the approximate AUD cost.
-    const cost = pricingCurrency() === 'AUD' ? `≈ ${formatAud(n * 100 * cfg.fx.rate)}` : formatUsd(n * 100);
+    const days = Math.floor((n * 100) / q.tokenCents);
+    const audCents = n * tokenPriceAud * 100;
+    const usdCents = Math.ceil(n * tokenPriceAud * usdPerAud - 1e-9) * 100;
+    const cost = isIntl ? `${formatAud(audCents)} (≈ ${formatUsd(usdCents)})` : formatAud(audCents);
     return `<button class="pack" type="button" data-tokens="${n}">
       <strong>${n} tokens</strong><span>${cost}</span>
       <small>${days >= 1 ? `about ${days} day${days > 1 ? 's' : ''} hire` : 'top-up'}</small></button>`;
   }).join('');
   const modes = {
-    stripe: 'Payments are processed securely by Stripe and charged in US dollars.',
+    stripe: 'Payments are processed securely by Stripe. All invoices are issued in Australian dollars (AUD$).',
     demo: 'Demo mode: no payment is taken and tokens are added straight away.',
     disabled: 'Online payments are not available right now. Please message us.',
   };
@@ -131,11 +137,13 @@ function renderTokens() {
 function bookingCard(b, { compact = false } = {}) {
   const canCancel = b.status === 'confirmed' && Date.now() < b.startAt - cfg.cancellationHours * 3600000;
   const statusLabel = { confirmed: 'Confirmed', active: 'In progress', completed: 'Completed', cancelled: 'Cancelled' }[b.status];
+  const isIntl = pricingCurrency() === 'USD';
+  const usdRate = b.fxRate > 1.05 ? 1 / b.fxRate : b.fxRate || 0.7;
+  const usdCents = Math.ceil((b.totalCents / 100) * usdRate - 1e-9) * 100;
   return `<article class="booking-card ${b.status}">
     <header><strong>${escapeHtml(b.ref)}</strong><span class="status-pill ${b.status === 'cancelled' ? 'bad' : b.status === 'completed' ? '' : 'ok'}">${statusLabel}</span></header>
     <p><strong>Pickup:</strong> ${formatDateTime(b.startAt)}<br><strong>Return:</strong> ${formatDateTime(b.endAt)}</p>
-    ${compact ? '' : `<p class="hint">${b.days} day${b.days > 1 ? 's' : ''} &middot; ${formatPrice({ aud: b.totalCents, usd: b.tokenCents })} inc GST &middot; ${formatTokens(b.tokenCents)} tokens
-      (at US$1 = AUD$${formatRate(b.fxRate)})${b.refundedTokenCents ? ` &middot; ${formatTokens(b.refundedTokenCents)} tokens refunded` : ''}</p>`}
+    ${compact ? '' : `<p class="hint">${b.days} day${b.days > 1 ? 's' : ''} &middot; ${formatAud(b.totalCents)}${isIntl ? ` (${formatUsd(usdCents)} at AUD$1 = US$${formatRate(usdRate)})` : ''} inc GST &middot; ${formatTokens(b.tokenCents)} tokens${b.refundedTokenCents ? ` &middot; ${formatTokens(b.refundedTokenCents)} tokens refunded` : ''}</p>`}
     ${canCancel && !compact ? `<button class="btn btn-small btn-ghost" data-cancel="${b.id}">Cancel booking</button>` : ''}
   </article>`;
 }
@@ -167,7 +175,7 @@ async function loadTransactions() {
     <thead><tr><th>Date</th><th>Type</th><th>Detail</th><th class="num">Tokens</th></tr></thead>
     <tbody>${transactions.map((t) => `<tr>
       <td>${formatStamp(t.createdAt)}</td><td>${kinds[t.kind]}</td>
-      <td>${escapeHtml(t.note || (t.amountCents ? `${formatUsd(t.amountCents)} via ${t.provider}` : ''))}</td>
+      <td>${escapeHtml(t.note || (t.amountCents ? `${(t.currency || 'AUD') === 'AUD' ? formatAud(t.amountCents) : formatUsd(t.amountCents)} via ${t.provider}` : ''))}</td>
       <td class="num ${t.deltaCents < 0 ? 'neg' : 'pos'}">${t.deltaCents > 0 ? '+' : ''}${formatTokens(t.deltaCents)}</td></tr>`).join('')}
     </tbody></table>` : '<p class="hint">No token activity yet.</p>';
 }

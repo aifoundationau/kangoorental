@@ -113,18 +113,19 @@ router.get('/locale', rateLimit({ windowMs: 60 * 1000, max: 40, message: 'Too ma
   }
 
   const [weather, market] = await Promise.all([getWeather(where.lat, where.lng), usdMarketRates()]);
-  const aud = currentRate(settings);
+  const fx = currentRate(settings);
   const code = countryCode ? currencyFor(countryCode) : '';
   // AUD uses the site's own rate so the panel matches the prices; other currencies use the market feed.
-  const perUsd = code === 'AUD' ? aud.rate : code === 'USD' ? 1 : market.rates?.[code] ?? null;
+  const perUsd = code === 'AUD' ? fx.audPerUsd : code === 'USD' ? 1 : market.rates?.[code] ?? null;
 
   res.json({
     place,
     countryCode,
     timezone: weather?.timezone || null,
     weather: weather && { current: weather.current, today: weather.daily[0] },
-    currency: code ? { code, perUsd, date: code === 'AUD' ? aud.date : market.date } : null,
-    audPerUsd: aud.rate,
+    currency: code ? { code, perUsd, date: code === 'AUD' ? fx.date : market.date } : null,
+    usdPerAud: fx.usdPerAud,
+    audPerUsd: fx.audPerUsd,
     pricingCurrency: countryCode ? pricingCurrencyFor(countryCode) : null,
     depot: { label: settings.pickup_label, km: Math.round(distanceKm(where.lat, where.lng, depot.lat, depot.lng)) },
   });

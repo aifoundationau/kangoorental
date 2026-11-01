@@ -49,7 +49,7 @@ async function loadDashboard() {
     tile('Licences to review', s.pendingLicences, 'customers'),
     tile('Unread messages', s.unreadMessages, 'messages'),
     tile('Customers', s.customers, 'customers'),
-    tile('Token sales (30 days)', formatUsd(s.revenueUsdCents30d), 'audit'),
+    tile('Token sales (30 days)', formatAud(s.revenueAudCents30d ?? s.revenueUsdCents30d), 'audit'),
     tile('Tokens held by customers', formatTokens(s.tokenCentsOutstanding), 'customers'),
   ].join('');
   const upcoming = bookings.filter((b) => b.startAt > Date.now()).sort((a, b) => a.startAt - b.startAt).slice(0, 8);
@@ -79,7 +79,7 @@ function bookingTable(rows) {
       <td><a href="#customers" data-customer="${b.userId}">${escapeHtml(b.userName)}</a><br><small>${escapeHtml(b.userPhone || '')}</small></td>
       <td>${formatDateTime(b.startAt)}</td>
       <td>${formatDateTime(b.endAt)}</td>
-      <td class="num">${formatAud(b.totalCents)}<br><small>at ${formatRate(b.fxRate)}</small></td>
+      <td class="num">${formatAud(b.totalCents)}</td>
       <td class="num">${formatTokens(b.tokenCents)}${b.refundedTokenCents ? `<br><small>${formatTokens(b.refundedTokenCents)} refunded</small>` : ''}</td>
       <td><span class="status-pill ${b.status === 'cancelled' ? 'bad' : 'ok'}">${STATUS_LABEL[b.status]}</span></td>
       <td class="actions">${bookingActions(b)}</td></tr>`).join('')}</tbody></table>`;
@@ -319,10 +319,17 @@ let previewTimer = null;
 
 function pricingFormValues() {
   const form = $('pricingForm');
+  const prices = [...document.querySelectorAll('#pList input[data-role="aud"]')].map((el) => el.value);
+  const tokens = [...document.querySelectorAll('#pList input[data-role="tokens"]')].map((el) => el.value);
+  const discounts = [...document.querySelectorAll('#pList input[data-role="discount"]')].map((el) => el.value || '0');
   return {
-    price_basis: form.price_basis.value,
-    price_table: [...document.querySelectorAll('#pList input')].map((el) => el.value).join(','),
-    daily_rate_token_cents: Math.round(Number($('pTok').value) * 100),
+    price_basis: 'aud',
+    token_price_aud: Math.max(1, Math.round(Number($('pTokenPriceAud')?.value || 1))),
+    token_share_fee: Math.max(0, Math.round(Number($('pShareFee')?.value || 1))),
+    price_table: prices.join(','),
+    token_table: tokens.join(','),
+    discount_table: discounts.join(','),
+    daily_rate_token_cents: Math.round(Number(tokens[0] || 99) * 100),
     gst_rate_bp: Math.round(Number($('pGst').value) * 100),
     fx_mode: form.fx_mode.value,
     fx_manual_rate: $('pManual').value,
@@ -330,60 +337,94 @@ function pricingFormValues() {
   };
 }
 
+function recalculateTierFromDiscount(dayNum) {
+  if (dayNum <= 1) return;
+  const day1Aud = Math.max(1, Math.round(Number(document.querySelector('#pList input[data-role="aud"]')?.value || 90)));
+  const discInput = document.querySelector(`#pList input[data-role="discount"][data-day="${dayNum}"]`);
+  const audInput = document.querySelector(`#pList #pList${dayNum}`);
+  const tokInput = document.querySelector(`#pList #pTokList${dayNum}`);
+  if (!discInput || !audInput || !tokInput) return;
+
+  const discPct = Math.max(0, Math.min(99, Number(discInput.value) || 0));
+  const fullAud = day1Aud * dayNum;
+  const audExGst = Math.max(1, Math.ceil(fullAud * (1 - discPct / 100) - 1e-9));
+  audInput.value = audExGst;
+
+  const gstPct = Number($('pGst')?.value) || 10;
+  const tokenPriceAud = Math.max(1, Number($('pTokenPriceAud')?.value) || 1);
+  const totalAud = audExGst + Math.ceil((audExGst * gstPct) / 100 - 1e-9);
+  tokInput.value = Math.ceil(totalAud / tokenPriceAud - 1e-9);
+}
+
+function recalculateAllDiscountedTiers() {
+  document.querySelectorAll('#pList input[data-role="discount"][data-day]').forEach((el) => {
+    recalculateTierFromDiscount(Number(el.dataset.day));
+  });
+}
+
 function renderCalc({ fx, dailyQuote: q, list }) {
   // Each price-list line shows what a customer pays for that hire length.
   list.forEach((lq, i) => {
     const out = document.getElementById(`pListOut${i + 1}`);
-    if (out) out.textContent = `= ${formatAud(lq.totalCents)} inc GST · ${formatTokens(lq.tokenCents)} tokens`;
+    if (out) out.textContent = `+ ${formatAud(lq.gstCents)} GST = ${formatAud(lq.totalCents)} inc GST (${formatUsd(lq.usdTotalCents)} intl)`;
   });
   const rate = formatRate(fx.rate);
   const gstPct = (q.gstRateBp / 100).toString();
-  const steps = q.priceBasis === 'aud'
-    ? [
-      `Daily rate: <strong>${formatAud(q.subtotalCents)}</strong> ex GST (fixed in AUD).`,
-      `Convert to USD at US$1 = AUD$${rate}: ${formatAud(q.subtotalCents)} ÷ ${rate} = <strong>${formatTokens(q.subtotalTokenCents)} tokens</strong> ex GST.`,
-      `Add ${gstPct}% GST on the AUD price: ${formatAud(q.subtotalCents)} + ${formatAud(q.gstCents)} = <strong>${formatAud(q.totalCents)}</strong>.`,
-      `Customer pays ${formatAud(q.totalCents)} ÷ ${rate} = <strong>${formatTokens(q.tokenCents)} tokens</strong> (US$${formatTokens(q.tokenCents)}).`,
-    ]
-    : [
-      `Daily rate: <strong>${formatTokens(q.subtotalTokenCents)} tokens</strong> ex GST = US$${formatTokens(q.subtotalTokenCents)} (fixed in tokens).`,
-      `Convert to AUD at US$1 = AUD$${rate}: US$${formatTokens(q.subtotalTokenCents)} × ${rate} = <strong>${formatAud(q.subtotalCents)}</strong> ex GST.`,
-      `Add ${gstPct}% GST: ${formatAud(q.subtotalCents)} + ${formatAud(q.gstCents)} = <strong>${formatAud(q.totalCents)}</strong> rental price.`,
-      `Customer pays ${formatAud(q.totalCents)} ÷ ${rate} = <strong>${formatTokens(q.tokenCents)} tokens</strong> (US$${formatTokens(q.tokenCents)}).`,
-    ];
+  const steps = [
+    `1-day hire price: <strong>${formatAud(q.subtotalCents)}</strong> ex GST + <strong>${formatAud(q.gstCents)}</strong> (${gstPct}% GST) = <strong>${formatAud(q.totalCents)}</strong> inc GST.`,
+    `Tokens charged for 1-day hire: <strong>${formatTokens(q.tokenCents)} tokens</strong> (customizable per product/service tier; default 1 token = AUD$${$('pTokenPriceAud')?.value || 1}).`,
+    `Visitors in Australia &amp; New Zealand see: <strong>${formatAud(q.totalCents)}</strong> inc GST (${formatTokens(q.tokenCents)} tokens).`,
+    `Visitors in all other nations see currency conversion <strong>AUD$1 = US$${rate}</strong> (${formatAud(q.totalCents)} &rarr; <strong>${formatUsd(q.usdTotalCents)}</strong>). All invoices are in Australian dollars (AUD$).`,
+  ];
   $('calcSteps').innerHTML = steps.map((s) => `<li>${s}</li>`).join('');
-  $('hdrFx').textContent = `US$1 = AUD$${rate}`;
+  $('hdrFx').textContent = `AUD$1 = US$${rate}`;
 }
 
 function renderPricing(view) {
   pricingState = view;
   const s = view.settings;
   const form = $('pricingForm');
-  form.price_basis.value = s.price_basis;
   form.fx_mode.value = s.fx_mode;
-  $('pList').innerHTML = String(s.price_table).split(',').map((price, i) => `
-    <div class="price-list-row">
-      <label for="pList${i + 1}">${i + 1} day${i ? 's' : ''}</label>
-      <span class="price-input"><span aria-hidden="true">AUD$</span><input id="pList${i + 1}" type="number" min="1" step="1" required value="${Number(price)}"
-        data-testid="price-list-${i + 1}" data-agent-id="price-list-${i + 1}" aria-label="Price for ${i + 1} day${i ? 's' : ''}, whole AUD before GST"></span>
-      <output id="pListOut${i + 1}" class="hint"></output>
-    </div>`).join('');
-  $('pTok').value = Math.ceil(Number(s.daily_rate_token_cents) / 100);
+  const prices = String(s.price_table || '').split(',').map((n) => Number(n.trim()));
+  const gstBp = Number(s.gst_rate_bp) || 1000;
+  const rawTokens = String(s.token_table || '').split(',').map((n) => Number(n.trim()));
+  const rawDiscounts = String(s.discount_table || '0,5,5,5,5,5,5').split(',').map((n) => Number(n.trim()));
+
+  $('pList').innerHTML = prices.map((price, i) => {
+    const day = i + 1;
+    const defaultTok = price + Math.ceil((price * gstBp) / 10000 - 1e-9);
+    const tokVal = Number.isInteger(rawTokens[i]) && rawTokens[i] >= 1 ? rawTokens[i] : defaultTok;
+    const discVal = Number.isFinite(rawDiscounts[i]) ? rawDiscounts[i] : (day === 1 ? 0 : 5);
+    const discountCell = day === 1
+      ? `<span class="price-input discount-input"><input data-role="discount" data-day="1" type="number" value="0" readonly title="Day 1 base rate"><span aria-hidden="true">% off</span></span>`
+      : `<span class="price-input discount-input"><input id="pDisc${day}" data-role="discount" data-day="${day}" type="number" min="0" max="99" step="0.5" value="${discVal}"
+          data-testid="discount-list-${day}" data-agent-id="discount-list-${day}" aria-label="Discount percentage for ${day} days hire"><span aria-hidden="true">% off</span></span>`;
+
+    return `
+    <div class="price-list-row" data-tier="${day}">
+      <label for="pList${day}">${day} day${i ? 's' : ''}</label>
+      ${discountCell}
+      <span class="price-input"><span aria-hidden="true">AUD$</span><input id="pList${day}" data-role="aud" data-day="${day}" type="number" min="1" step="1" required value="${price}"
+        data-testid="price-list-${day}" data-agent-id="price-list-${day}" aria-label="Price for ${day} day${i ? 's' : ''}, whole AUD before GST"></span>
+      <span class="price-input token-input"><span aria-hidden="true">Tokens:</span><input id="pTokList${day}" data-role="tokens" data-day="${day}" type="number" min="1" step="1" required value="${tokVal}"
+        data-testid="token-list-${day}" data-agent-id="token-list-${day}" aria-label="Tokens for ${day} day${i ? 's' : ''} hire"></span>
+      <output id="pListOut${day}" class="hint"></output>
+    </div>`;
+  }).join('');
+  if ($('pTokenPriceAud')) $('pTokenPriceAud').value = Number(s.token_price_aud) || 1;
+  if ($('pShareFee')) $('pShareFee').value = Number(s.token_share_fee ?? 1);
   $('pGst').value = Number(s.gst_rate_bp) / 100;
-  $('pManual').value = s.fx_manual_rate;
+  const manualNum = Number(s.fx_manual_rate) || 0.7;
+  $('pManual').value = (manualNum > 1.05 ? 1 / manualNum : manualNum).toFixed(4);
   $('pPacks').value = s.token_packs;
-  $('liveRate').textContent = s.fx_live_rate ? `AUD$${formatRate(s.fx_live_rate)}` : 'Not loaded yet';
+  $('liveRate').textContent = s.fx_live_rate ? `AUD$1 = US$${formatRate(s.fx_live_rate)}` : 'Not loaded yet';
   $('liveRateInfo').textContent = s.fx_live_rate
     ? `${s.fx_live_source}${s.fx_live_date ? `, rate date ${s.fx_live_date}` : ''}. Checked ${formatStamp(s.fx_live_checked_at)}.`
     : 'The live rate loads automatically when the server starts.';
-  toggleBasisFields();
   renderCalc(view);
 }
 
-function toggleBasisFields() {
-  const basis = $('pricingForm').price_basis.value;
-  $('tokenRateField').classList.toggle('inactive', basis !== 'tokens');
-}
+function toggleBasisFields() {}
 
 async function loadPricing() {
   renderPricing(await api('/admin/settings'));
@@ -547,8 +588,33 @@ function bindEvents() {
     }
   });
 
-  $('pricingForm').addEventListener('input', schedulePreview);
+  $('pricingForm').addEventListener('input', (e) => {
+    const role = e.target.dataset.role;
+    if (role === 'discount') {
+      const dayNum = Number(e.target.dataset.day);
+      if (dayNum > 1) recalculateTierFromDiscount(dayNum);
+    } else if (role === 'aud' && e.target.dataset.day === '1') {
+      recalculateAllDiscountedTiers();
+    } else if (e.target.id === 'pGst' || e.target.id === 'pTokenPriceAud') {
+      recalculateAllDiscountedTiers();
+    }
+    schedulePreview();
+  });
   $('pricingForm').addEventListener('change', schedulePreview);
+  $('resetTokensBtn')?.addEventListener('click', () => {
+    const gstPct = Number($('pGst').value) || 10;
+    const tokenPriceAud = Math.max(1, Number($('pTokenPriceAud')?.value) || 1);
+    document.querySelectorAll('#pList .price-list-row').forEach((row) => {
+      const audInput = row.querySelector('input[data-role="aud"]');
+      const tokInput = row.querySelector('input[data-role="tokens"]');
+      if (audInput && tokInput) {
+        const audEx = Number(audInput.value) || 0;
+        const totalAud = audEx + Math.ceil((audEx * gstPct) / 100 - 1e-9);
+        tokInput.value = Math.ceil(totalAud / tokenPriceAud - 1e-9);
+      }
+    });
+    schedulePreview();
+  });
   $('pricingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     showError($('pricingError'), null);
@@ -610,7 +676,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('[data-super]').forEach((el) => { el.hidden = !superadmin; });
   bindEvents();
   bindHandover();
-  api('/admin/settings').then((v) => { $('hdrFx').textContent = `US$1 = AUD$${formatRate(v.fx.rate)}`; }).catch(() => {});
+  api('/admin/settings').then((v) => { $('hdrFx').textContent = `AUD$1 = US$${formatRate(v.fx.rate)}`; }).catch(() => {});
   showTab(location.hash.slice(1) || 'dashboard');
   window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 });

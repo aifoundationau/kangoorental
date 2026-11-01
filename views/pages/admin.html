@@ -104,47 +104,52 @@
 
           <!-- Pricing & currency -->
           <div class="tab-panel" data-panel="pricing" role="tabpanel" hidden>
-            <h2>Pricing &amp; currency conversion</h2>
+            <h2>Pricing, tokens &amp; currency conversion</h2>
             <p class="hint" id="pricingReadonly" hidden>Only the superadmin can change pricing. You can view the current settings below.</p>
             <form id="pricingForm" class="stack">
               <fieldset>
-                <legend>How the daily price is set</legend>
-                <label class="radio"><input type="radio" name="price_basis" value="aud">
-                  <span><strong>Fixed AUD price.</strong> The AUD prices in the price list stay the same; the number of tokens changes with the exchange rate.</span></label>
-                <label class="radio"><input type="radio" name="price_basis" value="tokens">
-                  <span><strong>Fixed token price.</strong> The number of tokens stays the same; the AUD price changes with the exchange rate.</span></label>
-                <div class="field-row">
-                  <div class="field" id="tokenRateField">
-                    <label for="pTok">Daily rate, tokens ex GST (1 token = US$1)</label>
-                    <input id="pTok" type="number" min="1" step="1" required>
+                <legend>Default currency &amp; token value</legend>
+                <p class="hint">The default currency is <strong>AUD$</strong> and the default token price is <strong>1 token = AUD$1</strong>. All invoices are issued in Australian dollars.</p>
+                <input type="hidden" name="price_basis" value="aud">
+                <div class="field-row three">
+                  <div class="field">
+                    <label for="pTokenPriceAud">1 token price (AUD$)</label>
+                    <input id="pTokenPriceAud" type="number" min="1" max="1000" step="1" required value="1" data-testid="p-token-price-aud" data-agent-id="p-token-price-aud">
                   </div>
                   <div class="field">
                     <label for="pGst">GST %</label>
                     <input id="pGst" type="number" min="0" max="50" step="0.01" required>
                   </div>
+                  <div class="field">
+                    <label for="pShareFee">Token share / transfer fee (tokens)</label>
+                    <input id="pShareFee" type="number" min="0" max="1000" step="1" required value="1" data-testid="p-share-fee" data-agent-id="p-share-fee">
+                  </div>
                 </div>
               </fieldset>
 
               <fieldset>
-                <legend>Price list by hire length</legend>
-                <p class="hint">Total price before GST, in whole Australian dollars. The 1-day price is the daily rate, and the last line is the
-                  longest hire. Customers see these as price cards on the home page. With a fixed token price, the token rate follows the same steps.</p>
+                <legend>Products &amp; services — discount %, price &amp; customizable tokens</legend>
+                <p class="hint">Type the discount % for days 2&ndash;7 to automatically calculate the AUD$ price and tokens, or adjust them directly. By default, 1 token = AUD$1 (inc GST).</p>
                 <div class="price-list-edit" id="pList"></div>
+                <div class="btn-row mt-sm">
+                  <button class="btn btn-small btn-ghost" type="button" id="resetTokensBtn" data-super data-testid="reset-tokens-btn" data-agent-id="reset-tokens-btn">Reset all tiers to 1 token = AUD$1 (inc GST)</button>
+                </div>
               </fieldset>
 
               <fieldset>
-                <legend>USD &rarr; AUD exchange rate</legend>
+                <legend>International currency conversion (AUD$1 &rarr; USD)</legend>
+                <p class="hint">Shown to visitors in all nations except Australia and New Zealand. Visitors in Australia and New Zealand see AUD$ directly.</p>
                 <label class="radio"><input type="radio" name="fx_mode" value="live">
                   <span><strong>Live market rate.</strong> Updated every 6 hours from the European Central Bank (via Frankfurter), with a backup feed.</span></label>
                 <label class="radio"><input type="radio" name="fx_mode" value="manual">
-                  <span><strong>Manual rate.</strong> Use the rate you enter below.</span></label>
+                  <span><strong>Manual rate.</strong> Use the USD conversion rate for AUD$1 entered below.</span></label>
                 <div class="field-row">
                   <div class="field">
-                    <label for="pManual">Manual rate (AUD per US$1)</label>
-                    <input id="pManual" type="number" min="0.5" max="5" step="0.0001" required>
+                    <label for="pManual">Manual conversion rate (USD per AUD$1)</label>
+                    <input id="pManual" type="number" min="0.2" max="5" step="0.0001" required>
                   </div>
                   <div class="field">
-                    <span class="label">Live rate</span>
+                    <span class="label">Live conversion rate (AUD$1 &rarr; USD)</span>
                     <p class="big-figure" id="liveRate">–</p>
                     <p class="hint" id="liveRateInfo"></p>
                     <button class="btn btn-small btn-ghost" type="button" id="fxRefresh">Refresh now</button>
@@ -155,7 +160,7 @@
               <fieldset>
                 <legend>Token packs</legend>
                 <div class="field">
-                  <label for="pPacks">Packs shown to customers (comma-separated)</label>
+                  <label for="pPacks">Packs shown to customers (comma-separated token amounts)</label>
                   <input id="pPacks" required>
                 </div>
               </fieldset>

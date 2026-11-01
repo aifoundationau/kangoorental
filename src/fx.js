@@ -1,25 +1,33 @@
 import { getSettings, setSettings, num } from './db.js';
 
-// USD -> AUD exchange rate. Live mode refreshes from a public market-rate feed every few hours and
-// falls back to the last good rate, then to the superadmin's manual rate.
+// AUD -> USD exchange rate (how much US$ equals AUD$1) for visitors outside Australia and New Zealand.
+// Live mode refreshes from a public market-rate feed every few hours and falls back to the last good rate,
+// then to the superadmin's manual rate.
 
 const REFRESH_MS = 6 * 3600 * 1000;
 
 const SOURCES = [
   {
     name: 'Frankfurter (European Central Bank)',
-    url: 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD',
-    read: (d) => ({ rate: d?.rates?.AUD, date: d?.date }),
+    url: 'https://api.frankfurter.dev/v1/latest?base=AUD&symbols=USD',
+    read: (d) => ({ rate: d?.rates?.USD, date: d?.date }),
   },
   {
     name: 'ExchangeRate-API',
-    url: 'https://open.er-api.com/v6/latest/USD',
+    url: 'https://open.er-api.com/v6/latest/AUD',
     read: (d) => ({
-      rate: d?.result === 'success' ? d?.rates?.AUD : undefined,
+      rate: d?.result === 'success' ? d?.rates?.USD : undefined,
       date: d?.time_last_update_unix ? new Date(d.time_last_update_unix * 1000).toISOString().slice(0, 10) : '',
     }),
   },
 ];
+
+/** Normalizes a rate so it always represents USD per AUD$1 (e.g. ~0.70). If a legacy >1.05 AUD-per-USD rate is stored, inverts it. */
+export function normalizeUsdPerAud(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0.7;
+  return n > 1.05 ? Number((1 / n).toFixed(4)) : Number(n.toFixed(4));
+}
 
 export async function refreshLiveRate() {
   for (const source of SOURCES) {
@@ -27,8 +35,8 @@ export async function refreshLiveRate() {
       const res = await fetch(source.url, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) continue;
       const { rate, date } = source.read(await res.json());
-      // Sanity bounds stop a bad feed from mispricing every booking.
-      if (typeof rate !== 'number' || rate < 0.8 || rate > 3) continue;
+      // Sanity bounds stop a bad feed from mispricing conversions.
+      if (typeof rate !== 'number' || rate < 0.3 || rate > 1.5) continue;
       await setSettings({
         fx_live_rate: rate.toFixed(4),
         fx_live_date: date || '',
@@ -43,20 +51,27 @@ export async function refreshLiveRate() {
   return false;
 }
 
-/** Current AUD-per-USD rate and where it came from, from already-loaded settings. */
-export function currentRate(settings) {
-  const live = num(settings, 'fx_live_rate');
-  if (settings.fx_mode === 'live' && live > 0) {
+/** Current USD-per-AUD$1 rate (e.g. 0.70) and where it came from, from already-loaded settings. */
+export function currentRate(settings = {}) {
+  const liveRaw = num(settings, 'fx_live_rate');
+  if (settings.fx_mode === 'live' && liveRaw > 0) {
+    const rate = normalizeUsdPerAud(liveRaw);
     return {
-      rate: live,
+      rate,
+      usdPerAud: rate,
+      audPerUsd: Number((1 / rate).toFixed(4)),
       mode: 'live',
       source: settings.fx_live_source,
       date: settings.fx_live_date,
       checkedAt: settings.fx_live_checked_at,
     };
   }
+  const manualRaw = num(settings, 'fx_manual_rate') || 0.7;
+  const rate = normalizeUsdPerAud(manualRaw);
   return {
-    rate: num(settings, 'fx_manual_rate'),
+    rate,
+    usdPerAud: rate,
+    audPerUsd: Number((1 / rate).toFixed(4)),
     mode: 'manual',
     source: settings.fx_mode === 'live' ? 'Manual rate (live feed unavailable)' : 'Set by superadmin',
     date: '',

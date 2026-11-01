@@ -1,5 +1,5 @@
 import {
-  api, getMe, getConfig, isStaff, formatPrice, quotePrices, formatTokens, formatRate, formatDate, formatDateTime, formatTime,
+  api, getMe, getConfig, isStaff, formatAud, formatUsd, formatPrice, quotePrices, formatTokens, formatRate, formatDate, formatDateTime, formatTime,
   formatLongDate, weatherIcon, getDeviceLocation, toast, showError, setBusy, escapeHtml, ApiError,
 } from './common.js';
 import { pricingCurrency, DEPOT_TZ } from './prefs.js';
@@ -141,38 +141,41 @@ function renderQuote() {
   $('qDiscount').textContent = `−${formatPrice(p.discount)}`;
   $('qSubtotal').textContent = formatPrice(p.subtotal);
   $('qGst').textContent = formatPrice(p.gst);
-  $('qTotalLabel').textContent = `Total (${pricingCurrency()})`;
+  $('qTotalLabel').textContent = pricingCurrency() === 'AUD' ? 'Total (AUD)' : 'Total (AUD / USD)';
   $('qTotal').textContent = formatPrice(p.total);
   $('qTokens').textContent = `${formatTokens(q.tokenCents)} tokens`;
   $('qRate').textContent = pricingCurrency() === 'AUD'
-    ? `Converted at today's exchange rate, US$1 = AUD$${formatRate(q.fxRate)}. Amounts are rounded up to whole dollars and tokens.`
-    : '1 token = US$1. Amounts are rounded up to whole dollars and tokens.';
+    ? 'Default token price: 1 token = AUD$1. All invoices are issued in Australian dollars (AUD$).'
+    : `Currency conversion for international visitors: AUD$1 = US$${formatRate(q.fxRate)}. All invoices are in Australian dollars (AUD$).`;
 }
 
 function renderPricing() {
   const { cfg } = state;
   const q = cfg.dailyQuote;
   const p = quotePrices(q);
-  $('heroPrice').innerHTML = `<span class="price-main">${formatPrice(p.subtotal)}</span><span class="price-sub">+ GST per day &middot; ${formatTokens(q.tokenCents)} tokens</span>`;
+  $('heroPrice').innerHTML = `<span class="price-main">${formatAud(p.subtotal.aud)}</span><span class="price-sub">${pricingCurrency() === 'USD' ? `(${formatUsd(p.subtotal.usd)}) ` : ''}+ GST per day &middot; ${formatTokens(q.tokenCents)} tokens</span>`;
   renderPriceCards();
 }
 
-/** One price card per hire length (prices set by the superadmin). The selected card matches the booking's hire length. */
+/** One price card per hire length (AUD prices and token amounts set by the superadmin). */
 function renderPriceCards() {
   const list = state.cfg.priceList;
   const day1 = list[0];
+  const isIntl = pricingCurrency() === 'USD';
   $('pxCards').innerHTML = list.map((p) => {
     const label = `${p.days} day${p.days > 1 ? 's' : ''}`;
-    const price = formatPrice({ aud: p.audCents, usd: p.usdCents });
+    const audPrice = formatAud(p.audCents);
+    const usdNote = isIntl ? ` (${formatUsd(p.usdCents)})` : '';
+    const tokensLabel = p.tokenCents ? ` · ${formatTokens(p.tokenCents)} tokens` : '';
     const save = { aud: day1.audCents * p.days - p.audCents, usd: day1.usdCents * p.days - p.usdCents };
     const best = p.days === list.length && list.length > 1;
     return `<button type="button" class="postcard${best ? ' best' : ''}" data-days="${p.days}" aria-pressed="${p.days === state.days}"
-        data-testid="price-card-${p.days}" data-agent-id="price-card-${p.days}" aria-label="${label} for ${price} before GST">
+        data-testid="price-card-${p.days}" data-agent-id="price-card-${p.days}" aria-label="${label} for ${audPrice}${usdNote} before GST">
       ${best ? '<span class="pc-ribbon">Best value</span>' : ''}
       <span class="pc-days">${label}</span>
-      <strong class="pc-price">${price}</strong>
-      <span class="pc-sub">+ GST · ${formatPrice({ aud: p.audCents / p.days, usd: p.usdCents / p.days })} a day</span>
-      ${save.aud > 0 ? `<span class="pc-stamp">Save ${formatPrice(save)}</span>` : '<span class="pc-stamp plain">Daily rate</span>'}
+      <strong class="pc-price">${audPrice}</strong>
+      <span class="pc-sub">${isIntl ? `≈ ${formatUsd(p.usdCents)} ` : ''}+ GST${tokensLabel}</span>
+      ${save.aud > 0 ? `<span class="pc-stamp">Save ${formatAud(save.aud)}</span>` : `<span class="pc-stamp plain">${formatAud(p.audCents / p.days)} a day</span>`}
     </button>`;
   }).join('');
 }
@@ -181,7 +184,7 @@ function renderPriceCards() {
 function renderDayCards() {
   $('bkDays').innerHTML = state.cfg.priceList.map((p) => {
     const label = `${p.days} day${p.days > 1 ? 's' : ''}`;
-    const price = formatPrice({ aud: p.audCents, usd: p.usdCents });
+    const price = formatAud(p.audCents);
     const on = p.days === state.days;
     return `<button type="button" class="postcard mini" role="radio" aria-checked="${on}" tabindex="${on ? 0 : -1}" data-days="${p.days}"
         data-testid="book-days-${p.days}" data-agent-id="book-days-${p.days}" aria-label="${label}, ${price} before GST">
@@ -430,10 +433,10 @@ async function loadHub() {
     $('hubMap').replaceChildren(frame);
     $('hubDirections').href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-    $('hubFx').textContent = `US$1 = AUD$${formatRate(hub.fx.rate)}`;
+    $('hubFx').textContent = `AUD$1 = US$${formatRate(hub.fx.rate)}`;
     $('hubFxSource').textContent = hub.fx.mode === 'live'
-      ? `Market rate from ${hub.fx.source}${hub.fx.date ? `, ${hub.fx.date}` : ''}.`
-      : hub.fx.source;
+      ? `Market rate from ${hub.fx.source}${hub.fx.date ? `, ${hub.fx.date}` : ''} (shown to visitors outside AU & NZ).`
+      : `${hub.fx.source} (shown to visitors outside AU & NZ).`;
 
     const w = hub.weather;
     if (!w) {

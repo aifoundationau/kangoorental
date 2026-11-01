@@ -47,24 +47,38 @@ export const isStaff = (user) => user && (user.role === 'admin' || user.role ===
 
 /* ---------- Formatting ---------- */
 
-// Every dollar and token amount is shown as a whole number, rounded up. No decimals ever show.
+// Every dollar and token amount is shown as a whole number, rounded up.
 const ceilWhole = (cents) => Math.ceil(cents / 100 - 1e-9) || 0; // `|| 0` turns -0 into 0
 export const formatAud = (cents) => `AUD$${ceilWhole(cents).toLocaleString('en-AU')}`;
 export const formatUsd = (cents) => `US$${ceilWhole(cents).toLocaleString('en-US')}`;
 export const formatTokens = (tokenCents) => ceilWhole(tokenCents).toLocaleString('en-AU');
-export const formatRate = (rate) => Math.ceil(Number(rate) - 1e-9).toString();
+export const formatRate = (rate) => {
+  const n = Number(rate);
+  if (!Number.isFinite(n) || n <= 0) return '0.70';
+  const usdPerAud = n > 1.05 ? 1 / n : n;
+  return usdPerAud.toFixed(2);
+};
 
-/** A price in the visitor's pricing currency: AUD in Australia and New Zealand, USD everywhere else. */
-export const formatPrice = ({ aud: audCents, usd: usdCents }) => (pricingCurrency() === 'AUD' ? formatAud(audCents) : formatUsd(usdCents));
+/**
+ * Default currency is AUD. Visitors in Australia and New Zealand see AUD$;
+ * visitors in all other nations see AUD$ with the USD conversion.
+ */
+export const formatPrice = ({ aud: audCents, usd: usdCents }) => (
+  pricingCurrency() === 'AUD' ? formatAud(audCents) : `${formatAud(audCents)} (${formatUsd(usdCents)})`
+);
 
-/** A quote's amounts in both currencies. The USD amounts are the token amounts, since 1 token = US$1. */
-export const quotePrices = (q) => ({
-  list: { aud: q.listSubtotalCents, usd: q.listSubtotalTokenCents },
-  discount: { aud: q.discountCents, usd: q.listSubtotalTokenCents - q.subtotalTokenCents },
-  subtotal: { aud: q.subtotalCents, usd: q.subtotalTokenCents },
-  gst: { aud: q.gstCents, usd: q.tokenCents - q.subtotalTokenCents },
-  total: { aud: q.totalCents, usd: q.tokenCents },
-});
+/** A quote's amounts in AUD and converted USD (AUD$1 -> USD for visitors outside Australia and New Zealand). */
+export const quotePrices = (q) => {
+  const rate = q.usdPerAud || (q.fxRate > 1.05 ? 1 / q.fxRate : q.fxRate || 0.7);
+  const toUsd = (audCents) => Math.ceil((audCents / 100) * rate - 1e-9) * 100;
+  return {
+    list: { aud: q.listSubtotalCents, usd: q.usdListSubtotalCents ?? toUsd(q.listSubtotalCents) },
+    discount: { aud: q.discountCents, usd: q.usdDiscountCents ?? toUsd(q.discountCents) },
+    subtotal: { aud: q.subtotalCents, usd: q.usdSubtotalCents ?? toUsd(q.subtotalCents) },
+    gst: { aud: q.gstCents, usd: q.usdGstCents ?? toUsd(q.gstCents) },
+    total: { aud: q.totalCents, usd: q.usdTotalCents ?? toUsd(q.totalCents) },
+  };
+};
 
 // Dates and times follow the visitor's settings in the location panel (date order, 12/24-hour clock, time zone).
 const DATE_LOCALES = { dmy: 'en-AU', mdy: 'en-US', ymd: 'en-CA' };
@@ -259,6 +273,10 @@ function updateNav(user) {
     if (name) name.textContent = user.fullName || user.email || 'User';
     if (email) email.textContent = user.email || '';
     if (user.picture && img) {
+      img.onerror = () => {
+        img.hidden = true;
+        if (initial) initial.hidden = false;
+      };
       img.src = user.picture;
       img.hidden = false;
       if (initial) initial.hidden = true;

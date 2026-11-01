@@ -126,51 +126,70 @@ await step('requests without the CSRF token are refused', async () => {
   assert.equal((await customer.api('/messages', { method: 'POST', body: { body: 'hi' }, csrf: false })).status, 403);
 });
 
-await step('superadmin logs in and sets a fixed manual exchange rate', async () => {
+await step('superadmin logs in and sets a fixed manual exchange rate and custom token table', async () => {
   assert.ok(ADMIN.email && ADMIN.password, 'set ADMIN_EMAIL and ADMIN_PASSWORD');
   assert.equal((await admin.api('/auth/login', { method: 'POST', body: ADMIN })).status, 200);
   const { status, data } = await admin.api('/admin/settings', {
     method: 'PUT',
-    body: { settings: { price_basis: 'aud', price_table: '90,165,230,280,315,340,350', gst_rate_bp: 1000, fx_mode: 'manual', fx_manual_rate: '1.43' } },
+    body: {
+      settings: {
+        price_basis: 'aud',
+        token_price_aud: 1,
+        price_table: '90,171,257,342,428,513,599',
+        token_table: '99,189,283,377,471,565,659',
+        discount_table: '0,5,5,5,5,5,5',
+        gst_rate_bp: 1000,
+        fx_mode: 'manual',
+        fx_manual_rate: '0.70',
+      },
+    },
   });
   assert.equal(status, 200, JSON.stringify(data));
-  assert.equal(data.fx.rate, 1.43);
+  assert.equal(data.fx.rate, 0.7);
 });
 
-await step('AUD basis: AUD$90 + GST at 1.43 = AUD$99 = 70 tokens (69.23 rounded up)', async () => {
+await step('default AUD & token model: AUD$90 + GST = AUD$99 = 99 tokens (1 token = AUD$1), USD conversion at 0.70 = US$70', async () => {
   const { data: q } = await customer.api('/quote?days=1');
   assert.equal(q.subtotalCents, 9000);
-  assert.equal(q.subtotalTokenCents, 6300); // AUD$90 / 1.43 = 62.94 -> 63 tokens ex GST
   assert.equal(q.gstCents, 900);
   assert.equal(q.totalCents, 9900);
-  assert.equal(q.tokenCents, 7000); // AUD$99 / 1.43 = 69.23 -> 70 tokens
+  assert.equal(q.tokenCents, 9900); // 99 tokens (1 token = AUD$1)
+  assert.equal(q.usdSubtotalCents, 6300); // AUD$90 * 0.70 = US$63
+  assert.equal(q.usdTotalCents, 7000); // AUD$99 * 0.70 = 69.30 -> US$70
   assert.equal(q.discountCents, 0);
 });
 
-await step('price list: 1-7 days AUD$90/165/230/280/315/340/350 ex GST, up to 7 days; whole amounts rounded up', async () => {
+await step('price list: 1-7 days with 5% discount on days 2..7, customizable tokens per tier', async () => {
   const { data: cfg } = await customer.api('/config');
   assert.equal(cfg.maxRentalDays, 7);
-  assert.deepEqual(cfg.priceList.map((p) => p.audCents), [9000, 16500, 23000, 28000, 31500, 34000, 35000]);
-  const two = (await customer.api('/quote?days=2')).data; // AUD$165, GST 16.50 -> 17, AUD$182 / 1.43 = 127.27 -> 128 tokens
-  assert.deepEqual([two.listSubtotalCents, two.discountCents, two.subtotalCents, two.gstCents, two.totalCents, two.tokenCents], [18000, 1500, 16500, 1700, 18200, 12800]);
-  const five = (await customer.api('/quote?days=5')).data; // AUD$315, GST 31.50 -> 32, AUD$347 / 1.43 = 242.65 -> 243 tokens
-  assert.deepEqual([five.listSubtotalCents, five.discountCents, five.subtotalCents, five.gstCents, five.totalCents, five.tokenCents], [45000, 13500, 31500, 3200, 34700, 24300]);
-  const seven = (await customer.api('/quote?days=7')).data; // AUD$350 + AUD$35 GST = AUD$385 -> 269.23 -> 270 tokens
-  assert.deepEqual([seven.subtotalCents, seven.totalCents, seven.tokenCents], [35000, 38500, 27000]);
+  assert.deepEqual(cfg.priceList.map((p) => p.audCents), [9000, 17100, 25700, 34200, 42800, 51300, 59900]);
+  const two = (await customer.api('/quote?days=2')).data; // AUD$171 + AUD$18 GST = AUD$189 = 189 tokens
+  assert.deepEqual([two.listSubtotalCents, two.discountCents, two.subtotalCents, two.gstCents, two.totalCents, two.tokenCents], [18000, 900, 17100, 1800, 18900, 18900]);
+  const five = (await customer.api('/quote?days=5')).data; // AUD$428 + AUD$43 GST = AUD$471 = 471 tokens
+  assert.deepEqual([five.listSubtotalCents, five.discountCents, five.subtotalCents, five.gstCents, five.totalCents, five.tokenCents], [45000, 2200, 42800, 4300, 47100, 47100]);
+  const seven = (await customer.api('/quote?days=7')).data; // AUD$599 + AUD$60 GST = AUD$659 = 659 tokens
+  assert.deepEqual([seven.subtotalCents, seven.totalCents, seven.tokenCents], [59900, 65900, 65900]);
   assert.equal((await customer.api('/quote?days=8')).status, 400);
   for (const q of [two, five, seven]) {
-    for (const k of ['listSubtotalCents', 'discountCents', 'subtotalCents', 'gstCents', 'totalCents', 'tokenCents', 'subtotalTokenCents']) assert.equal(q[k] % 100, 0, k);
+    for (const k of ['listSubtotalCents', 'discountCents', 'subtotalCents', 'gstCents', 'totalCents', 'tokenCents', 'usdTotalCents']) assert.equal(q[k] % 100, 0, k);
   }
 });
 
-await step('token basis: 62 tokens -> 62 x 1.43 = AUD$88.66 -> AUD$89 + AUD$9 GST = AUD$98 = 69 tokens', async () => {
-  await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_basis: 'tokens', daily_rate_token_cents: 6200 } } });
+await step('superadmin can customize token amount per product/service tier', async () => {
+  await admin.api('/admin/settings', { method: 'PUT', body: { settings: { token_table: '69,189,283,377,471,565,659' } } });
   const { data: q } = await customer.api('/quote?days=1');
-  assert.equal(q.subtotalCents, 8900);
+  assert.equal(q.subtotalCents, 9000);
   assert.equal(q.gstCents, 900);
-  assert.equal(q.totalCents, 9600);
-  assert.equal(q.tokenCents, 6700);
-  await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_basis: 'aud' } } });
+  assert.equal(q.totalCents, 9900);
+  assert.equal(q.tokenCents, 6900);
+  // Price-list prices entered with cents are rounded down to whole dollars; a longer hire can't cost less.
+  const preview = await admin.api('/admin/pricing/preview', { method: 'POST', body: { settings: { price_table: '90.5,171.99,257,342,428,513,599' } } });
+  assert.deepEqual(preview.data.list.map((q) => q.subtotalCents).slice(0, 2), [9000, 17100]);
+  assert.equal((await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_table: '90,80' } } })).status, 400);
+});
+  assert.equal(q.gstCents, 900);
+  assert.equal(q.totalCents, 9900);
+  assert.equal(q.tokenCents, 6900);
   // Price-list prices entered with cents are rounded down to whole dollars; a longer hire can't cost less.
   const preview = await admin.api('/admin/pricing/preview', { method: 'POST', body: { settings: { price_table: '90.5,165.99,230,280,315,340,350' } } });
   assert.deepEqual(preview.data.list.map((q) => q.subtotalCents).slice(0, 2), [9000, 16500]);
@@ -352,8 +371,8 @@ await step('customer with an active booking cannot delete; after cancelling, can
   assert.equal((await relogin.api('/auth/login', { method: 'POST', body: { email, password: 'correct-horse-9' } })).status, 401);
 });
 
-await step('restore live exchange rate mode', async () => {
-  assert.equal((await admin.api('/admin/settings', { method: 'PUT', body: { settings: { fx_mode: 'live' } } })).status, 200);
+await step('restore default discount/token table and live exchange rate mode', async () => {
+  assert.equal((await admin.api('/admin/settings', { method: 'PUT', body: { settings: { price_table: '90,171,257,342,428,513,599', token_table: '99,189,283,377,471,565,659', discount_table: '0,5,5,5,5,5,5', fx_mode: 'live' } } })).status, 200);
 });
 
 console.log(`\nAll ${passed} checks passed.`);

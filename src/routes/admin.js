@@ -42,6 +42,9 @@ router.get('/admin/stats', async (req, res) => {
     upcomingBookings: live.filter((b) => b.status === 'confirmed' && b.startAt > now).length,
     activeBookings: live.filter((b) => b.status === 'active').length,
     unreadMessages: threads.docs.reduce((n, d) => n + d.data().unreadForAdmin, 0),
+    revenueAudCents30d: allDocs(purchases)
+      .filter((t) => t.kind === 'purchase' && (t.provider === 'stripe' || t.provider === 'demo'))
+      .reduce((n, t) => n + (t.amountCents || 0), 0),
     revenueUsdCents30d: allDocs(purchases)
       .filter((t) => t.kind === 'purchase' && t.provider === 'stripe')
       .reduce((n, t) => n + (t.amountCents || 0), 0),
@@ -59,16 +62,33 @@ const SETTING_RULES = {
     if (!['aud', 'tokens'].includes(v)) throw new HttpError(400, 'Price basis must be AUD or tokens.');
     return v;
   },
-  // Prices are whole dollars and whole tokens, rounded down.
+  token_price_aud: (v) => int(v, { field: 'Token price (AUD)', min: 1, max: 1000 }),
+  // Prices are whole dollars and whole tokens.
   // Total price for a 1, 2, 3... day hire, whole AUD ex GST (comma-separated). Longer hires can't cost less.
   price_table: (v) => {
-    const prices = String(v).split(',').map((s) => floorWhole(Number(s.trim())));
+    const prices = String(v).split(',').map((s) => Math.floor(Number(s.trim())));
     if (prices.length < 1 || prices.length > 30 || prices.some((n) => !(n >= 1 && n <= 100000))) {
       throw new HttpError(400, 'Enter a price of at least AUD$1 for every hire length.');
     }
     if (prices.some((n, i) => i > 0 && n < prices[i - 1])) throw new HttpError(400, "A longer hire can't cost less than a shorter one.");
     return prices.join(',');
   },
+  // Customizable token amounts for each hire length (1..7 days).
+  token_table: (v) => {
+    const tokens = String(v).split(',').map((s) => Math.floor(Number(s.trim())));
+    if (tokens.length < 1 || tokens.length > 30 || tokens.some((n) => !(n >= 1 && n <= 1000000))) {
+      throw new HttpError(400, 'Enter a whole token amount of at least 1 token for every hire length.');
+    }
+    return tokens.join(',');
+  },
+  discount_table: (v) => {
+    const discounts = String(v).split(',').map((s) => Number(s.trim()));
+    if (discounts.length < 1 || discounts.length > 30 || discounts.some((n) => !Number.isFinite(n) || n < 0 || n > 99)) {
+      throw new HttpError(400, 'Enter a valid discount percentage between 0 and 99 for each hire length.');
+    }
+    return discounts.map((n) => Math.round(n * 100) / 100).join(',');
+  },
+  token_share_fee: (v) => int(v, { field: 'Token share fee', min: 0, max: 1000 }),
   daily_rate_token_cents: (v) => wholeCents(int(v, { field: 'Daily rate (tokens)', min: 100, max: 10000000 })),
   gst_rate_bp: (v) => int(v, { field: 'GST rate', min: 0, max: 5000 }),
   fx_mode: (v) => {
@@ -77,8 +97,9 @@ const SETTING_RULES = {
   },
   fx_manual_rate: (v) => {
     const n = Number(v);
-    if (!(n >= 0.5 && n <= 5)) throw new HttpError(400, 'Manual exchange rate must be between 0.5 and 5 AUD per USD.');
-    return n.toFixed(4);
+    if (!(n >= 0.2 && n <= 5)) throw new HttpError(400, 'Manual exchange rate must be between 0.2 and 5.');
+    const usdPerAud = n > 1.05 ? 1 / n : n;
+    return usdPerAud.toFixed(4);
   },
   token_packs: (v) => {
     const packs = String(v).split(',').map((s) => Number(s.trim()));

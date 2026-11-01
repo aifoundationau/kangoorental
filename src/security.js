@@ -174,7 +174,7 @@ export function securityHeaders(req, res, next) {
       "default-src 'self'",
       "script-src 'self' https://accounts.google.com/gsi/client",
       "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
-      "img-src 'self' data:",
+      "img-src 'self' data: https://*.googleusercontent.com",
       "frame-src https://www.openstreetmap.org https://accounts.google.com/gsi/",
       "connect-src 'self' https://accounts.google.com/gsi/",
       "form-action 'self' https://checkout.stripe.com",

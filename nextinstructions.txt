@@ -1,0 +1,17 @@
+# Next Instructions - Kangoo Rental
+
+## Current Status:
+- Local dev server is running on http://localhost:3000
+- Overhaul applied:
+  1. Default currency is AUD$ (1 token = AUD$1 default).
+  2. SuperAdmin Pricing panel (/admin#pricing) has an interactive Discount % column for days 2..7 that automatically recalculates AUD ex GST, displays the itemized GST amount (+ AUD$X GST = AUD$Y inc GST), tokens, and converted USD in real-time.
+  3. Default prices configured with 5% discount for days 2..7 (AUD$90, $171, $257, $342, $428, $513, $599).
+  4. Google profile picture avatar CSP and referrerpolicy="no-referrer" fixes implemented with fallback.
+  5. Terms of Service updated to remove the previous fixed price sentence.
+  6. Data contracts updated in data-contracts.MD.
+
+## What to do next:
+1. User tests the automatic discount calculation in SuperAdmin (/admin#pricing) and home page pricing cards.
+2. Commit and push the clean working tree to GitHub.
+3. Verify staging/production deployment on Vercel.
+

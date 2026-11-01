@@ -29,11 +29,11 @@ async function stripe(method, path, params) {
 
 export async function createCheckout(user, tokens, { days } = {}) {
   const settings = await getSettings();
-  const rate = currentRate() || Number(settings.fx_live_rate) || 1.43;
+  const tokenPriceAud = Number(settings.token_price_aud) || 1;
   const gstBp = Number(settings.gst_rate_bp) || 1000;
 
-  // Total in AUD (always whole dollars, rounded up, no decimals)
-  const totalAud = Math.ceil(tokens * rate);
+  // Default token price is 1 token = AUD$1 (always whole AUD dollars, rounded up, no decimals)
+  const totalAud = Math.ceil(tokens * tokenPriceAud);
   // Calculate 10% GST component: total / (1 + 0.10) * 0.10
   const gstAud = Math.ceil((totalAud * gstBp) / (10000 + gstBp));
   const exGstAud = totalAud - gstAud;
