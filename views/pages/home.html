@@ -3,9 +3,9 @@
         <div class="hero-copy">
           <p class="eyebrow">Van hire &middot; {{pickup_label}}</p>
           <h1>Hire a Renault Kangoo MAXI for the day.</h1>
-          <p class="lead">Long-wheelbase Maxi with extended cargo volume, economical 1.5L turbo diesel, and 6-speed manual transmission. Book online in 24-hour blocks and pick up from Wishart.</p>
+          <p class="lead">Long-wheelbase Maxi with extended cargo volume, economical 1.5L turbo diesel, and 6-speed manual transmission. Book online by the day and pick up from Wishart.</p>
           <div class="price-tag" id="heroPrice" aria-live="polite">
-            <span class="price-main">AUD$90</span><span class="price-sub">+ GST per 24 hours</span>
+            <span class="price-main">AUD$90</span><span class="price-sub">+ GST per day</span>
           </div>
           <div class="hero-actions">
             <a class="btn" href="#book">Check availability</a>
@@ -32,8 +32,7 @@
       <div class="container">
         <div class="section-head">
           <h2 id="bookTitle">Book the van</h2>
-          <p>Click the days you need on the calendar, up to {{max_days}} in a row, then choose a pickup time.
-            Striped days have no pickups or returns.</p>
+          <p>Click the days you need on the calendar, up to {{max_days}} days in a row. Striped days have no pickups or returns.</p>
         </div>
 
         <div class="booking-grid">
@@ -46,7 +45,6 @@
             <div class="calendar" id="calendar" role="grid" aria-labelledby="calTitle"></div>
             <ul class="legend">
               <li><span class="dot chosen"></span>Your days</li>
-              <li><span class="dot return"></span>Return day</li>
               <li><span class="dot available"></span>Available</li>
               <li><span class="dot nohandover"></span>No pickups or returns</li>
               <li><span class="dot partial"></span>Partly booked</li>
@@ -56,19 +54,15 @@
           </div>
 
           <form class="card booking-form" id="bookingForm" novalidate>
-            <div class="field">
-              <label for="bkDate">Pickup date</label>
-              <input id="bkDate" name="date" type="date" required>
+            <div class="booking-selection" id="bkSelection">
+              <span class="label">Selected hire period</span>
+              <p class="selection-summary" id="bkSummary" data-testid="bk-summary" data-agent-id="bk-summary">Click a day panel on the calendar to begin</p>
+              <p class="hint" id="bkDepotHours">Depot handover hours: 7:00 AM &ndash; 6:00 PM</p>
             </div>
-            <div class="field">
-              <label for="bkTime">Pickup time (Brisbane)</label>
-              <select id="bkTime" name="time" required></select>
-            </div>
-            <div class="field">
-              <span class="label" id="bkDaysLabel">How long? <span class="optional">(24-hour periods, before GST)</span></span>
-              <div class="day-cards" id="bkDays" role="radiogroup" aria-labelledby="bkDaysLabel"></div>
-            </div>
-            <p class="hint" id="bkReturn">Return by: choose a date</p>
+            <input id="bkDate" name="date" type="hidden">
+            <input id="bkTime" name="time" type="hidden" value="07:00">
+            <div id="bkDays" hidden></div>
+            <p id="bkReturn" hidden></p>
 
             <dl class="quote" id="quote">
               <div id="qListRow" hidden><dt id="qListLabel">Rental</dt><dd id="qList">–</dd></div>

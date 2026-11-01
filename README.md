@@ -1,7 +1,7 @@
 # Kangoo Rental
 
 Renault Kangoo MAXI (1.5L Diesel Manual 6-Speed) van hire in Wishart, Brisbane. Customers register (Brisbane area only), get their driver licence checked,
-add their insurance, buy tokens and book the van by the 24 hours. Staff run everything from the admin panel.
+add their insurance, buy tokens and book the van by the day. Staff run everything from the admin panel.
 
 Node.js + Express, Google Cloud Firestore (database `kangoorental`), Google Gemini for licence checks, Stripe for payments.
 

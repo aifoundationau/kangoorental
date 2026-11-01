@@ -206,8 +206,9 @@ legend { font-weight: 700; padding: 0 .4rem; }
 .cal-day.in-range { background: #dbe6ff; border-color: var(--blue); color: var(--blue-dark); }
 /* Free days with no pickups or returns (the owner is working): striped. The hire's return day: dashed outline. */
 .cal-day.nohandover { background: repeating-linear-gradient(135deg, #fff 0 6px, #eef7f1 6px 11px); border-color: #cfe9d8; color: #4f7a5f; }
-.cal-day.return-day { outline: 2px dashed var(--blue); outline-offset: 2px; }
 .cal-day.nohandover.in-range { background: repeating-linear-gradient(135deg, #dbe6ff 0 6px, #c9d9fb 6px 11px); border-color: var(--blue); color: var(--blue-dark); }
+.booking-selection { background: var(--bg-alt); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem; }
+.selection-summary { font-size: 1.05rem; font-weight: 700; color: var(--ink); margin: .35rem 0 .25rem; }
 .cal-note { margin: .85rem 0 0; padding: .55rem .75rem; border-radius: 9px; background: var(--wait-bg); color: var(--wait); font-size: .88rem; }
 .postcard:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 /* Admin "Pickup days" calendar */

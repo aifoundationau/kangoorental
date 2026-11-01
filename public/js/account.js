@@ -134,7 +134,7 @@ function bookingCard(b, { compact = false } = {}) {
   return `<article class="booking-card ${b.status}">
     <header><strong>${escapeHtml(b.ref)}</strong><span class="status-pill ${b.status === 'cancelled' ? 'bad' : b.status === 'completed' ? '' : 'ok'}">${statusLabel}</span></header>
     <p><strong>Pickup:</strong> ${formatDateTime(b.startAt)}<br><strong>Return:</strong> ${formatDateTime(b.endAt)}</p>
-    ${compact ? '' : `<p class="hint">${b.days} × 24 hours &middot; ${formatPrice({ aud: b.totalCents, usd: b.tokenCents })} inc GST &middot; ${formatTokens(b.tokenCents)} tokens
+    ${compact ? '' : `<p class="hint">${b.days} day${b.days > 1 ? 's' : ''} &middot; ${formatPrice({ aud: b.totalCents, usd: b.tokenCents })} inc GST &middot; ${formatTokens(b.tokenCents)} tokens
       (at US$1 = AUD$${formatRate(b.fxRate)})${b.refundedTokenCents ? ` &middot; ${formatTokens(b.refundedTokenCents)} tokens refunded` : ''}</p>`}
     ${canCancel && !compact ? `<button class="btn btn-small btn-ghost" data-cancel="${b.id}">Cancel booking</button>` : ''}
   </article>`;
