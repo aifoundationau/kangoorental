@@ -109,16 +109,12 @@
             <form id="pricingForm" class="stack">
               <fieldset>
                 <legend>Default currency &amp; token value</legend>
-                <p class="hint">The default currency is <strong>AUD$</strong> and the default token price is <strong>1 token = AUD$1</strong>. All invoices are issued in Australian dollars.</p>
+                <p class="hint">The default currency is <strong>AUD$</strong> and the default token price is <strong>1 token = AUD$1</strong>. Stripe Tax automatically handles 10% GST for buyers in Australia ($0 tax outside Australia) and generates official AUD Tax Invoices.</p>
                 <input type="hidden" name="price_basis" value="aud">
-                <div class="field-row three">
+                <div class="field-row">
                   <div class="field">
                     <label for="pTokenPriceAud">1 token price (AUD$)</label>
                     <input id="pTokenPriceAud" type="number" min="1" max="1000" step="1" required value="1" data-testid="p-token-price-aud" data-agent-id="p-token-price-aud">
-                  </div>
-                  <div class="field">
-                    <label for="pGst">GST %</label>
-                    <input id="pGst" type="number" min="0" max="50" step="0.01" required>
                   </div>
                   <div class="field">
                     <label for="pShareFee">Token share / transfer fee (tokens)</label>

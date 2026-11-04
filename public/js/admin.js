@@ -330,7 +330,6 @@ function pricingFormValues() {
     token_table: tokens.join(','),
     discount_table: discounts.join(','),
     daily_rate_token_cents: Math.round(Number(tokens[0] || 99) * 100),
-    gst_rate_bp: Math.round(Number($('pGst').value) * 100),
     fx_mode: form.fx_mode.value,
     fx_manual_rate: $('pManual').value,
     token_packs: $('pPacks').value,
@@ -350,9 +349,8 @@ function recalculateTierFromDiscount(dayNum) {
   const audExGst = Math.max(1, Math.ceil(fullAud * (1 - discPct / 100) - 1e-9));
   audInput.value = audExGst;
 
-  const gstPct = Number($('pGst')?.value) || 10;
   const tokenPriceAud = Math.max(1, Number($('pTokenPriceAud')?.value) || 1);
-  const totalAud = audExGst + Math.ceil((audExGst * gstPct) / 100 - 1e-9);
+  const totalAud = audExGst + Math.ceil((audExGst * 10) / 100 - 1e-9);
   tokInput.value = Math.ceil(totalAud / tokenPriceAud - 1e-9);
 }
 
@@ -363,18 +361,17 @@ function recalculateAllDiscountedTiers() {
 }
 
 function renderCalc({ fx, dailyQuote: q, list }) {
-  // Each price-list line shows what a customer pays for that hire length.
+  // Each price-list line shows what a customer pays for that hire length (inc. GST for Australia).
   list.forEach((lq, i) => {
     const out = document.getElementById(`pListOut${i + 1}`);
-    if (out) out.textContent = `+ ${formatAud(lq.gstCents)} GST = ${formatAud(lq.totalCents)} inc GST (${formatUsd(lq.usdTotalCents)} intl)`;
+    if (out) out.textContent = `+ ${formatAud(lq.gstCents)} GST = ${formatAud(lq.totalCents)} inc. GST (${formatUsd(lq.usdSubtotalCents)} intl)`;
   });
   const rate = formatRate(fx.rate);
-  const gstPct = (q.gstRateBp / 100).toString();
   const steps = [
-    `1-day hire price: <strong>${formatAud(q.subtotalCents)}</strong> ex GST + <strong>${formatAud(q.gstCents)}</strong> (${gstPct}% GST) = <strong>${formatAud(q.totalCents)}</strong> inc GST.`,
+    `1-day hire price (Australia): <strong>${formatAud(q.totalCents)} inc. GST</strong> (${formatAud(q.subtotalCents)} + ${formatAud(q.gstCents)} GST).`,
     `Tokens charged for 1-day hire: <strong>${formatTokens(q.tokenCents)} tokens</strong> (customizable per product/service tier; default 1 token = AUD$${$('pTokenPriceAud')?.value || 1}).`,
-    `Visitors in Australia &amp; New Zealand see: <strong>${formatAud(q.totalCents)}</strong> inc GST (${formatTokens(q.tokenCents)} tokens).`,
-    `Visitors in all other nations see currency conversion <strong>AUD$1 = US$${rate}</strong> (${formatAud(q.totalCents)} &rarr; <strong>${formatUsd(q.usdTotalCents)}</strong>). All invoices are in Australian dollars (AUD$).`,
+    `Stripe Checkout uses automatic Stripe Tax (<code>automatic_tax: { enabled: true }</code>, <code>tax_behavior: "exclusive"</code>): adds 10% GST in Australia and $0 tax outside Australia.`,
+    `Visitors outside Australia &amp; New Zealand see currency conversion <strong>AUD$1 = US$${rate}</strong> (${formatAud(q.subtotalCents)} &rarr; <strong>${formatUsd(q.usdSubtotalCents)}</strong>). All official tax invoices are issued in Australian dollars (AUD$).`,
   ];
   $('calcSteps').innerHTML = steps.map((s) => `<li>${s}</li>`).join('');
   $('hdrFx').textContent = `AUD$1 = US$${rate}`;
@@ -386,13 +383,12 @@ function renderPricing(view) {
   const form = $('pricingForm');
   form.fx_mode.value = s.fx_mode;
   const prices = String(s.price_table || '').split(',').map((n) => Number(n.trim()));
-  const gstBp = Number(s.gst_rate_bp) || 1000;
   const rawTokens = String(s.token_table || '').split(',').map((n) => Number(n.trim()));
   const rawDiscounts = String(s.discount_table || '0,5,5,5,5,5,5').split(',').map((n) => Number(n.trim()));
 
   $('pList').innerHTML = prices.map((price, i) => {
     const day = i + 1;
-    const defaultTok = price + Math.ceil((price * gstBp) / 10000 - 1e-9);
+    const defaultTok = price + Math.ceil((price * 10) / 100 - 1e-9);
     const tokVal = Number.isInteger(rawTokens[i]) && rawTokens[i] >= 1 ? rawTokens[i] : defaultTok;
     const discVal = Number.isFinite(rawDiscounts[i]) ? rawDiscounts[i] : (day === 1 ? 0 : 5);
     const discountCell = day === 1
@@ -405,7 +401,7 @@ function renderPricing(view) {
       <label for="pList${day}">${day} day${i ? 's' : ''}</label>
       ${discountCell}
       <span class="price-input"><span aria-hidden="true">AUD$</span><input id="pList${day}" data-role="aud" data-day="${day}" type="number" min="1" step="1" required value="${price}"
-        data-testid="price-list-${day}" data-agent-id="price-list-${day}" aria-label="Price for ${day} day${i ? 's' : ''}, whole AUD before GST"></span>
+        data-testid="price-list-${day}" data-agent-id="price-list-${day}" aria-label="Price for ${day} day${i ? 's' : ''}, whole AUD"></span>
       <span class="price-input token-input"><span aria-hidden="true">Tokens:</span><input id="pTokList${day}" data-role="tokens" data-day="${day}" type="number" min="1" step="1" required value="${tokVal}"
         data-testid="token-list-${day}" data-agent-id="token-list-${day}" aria-label="Tokens for ${day} day${i ? 's' : ''} hire"></span>
       <output id="pListOut${day}" class="hint"></output>
@@ -413,7 +409,6 @@ function renderPricing(view) {
   }).join('');
   if ($('pTokenPriceAud')) $('pTokenPriceAud').value = Number(s.token_price_aud) || 1;
   if ($('pShareFee')) $('pShareFee').value = Number(s.token_share_fee ?? 1);
-  $('pGst').value = Number(s.gst_rate_bp) / 100;
   const manualNum = Number(s.fx_manual_rate) || 0.7;
   $('pManual').value = (manualNum > 1.05 ? 1 / manualNum : manualNum).toFixed(4);
   $('pPacks').value = s.token_packs;
@@ -595,21 +590,20 @@ function bindEvents() {
       if (dayNum > 1) recalculateTierFromDiscount(dayNum);
     } else if (role === 'aud' && e.target.dataset.day === '1') {
       recalculateAllDiscountedTiers();
-    } else if (e.target.id === 'pGst' || e.target.id === 'pTokenPriceAud') {
+    } else if (e.target.id === 'pTokenPriceAud') {
       recalculateAllDiscountedTiers();
     }
     schedulePreview();
   });
   $('pricingForm').addEventListener('change', schedulePreview);
   $('resetTokensBtn')?.addEventListener('click', () => {
-    const gstPct = Number($('pGst').value) || 10;
     const tokenPriceAud = Math.max(1, Number($('pTokenPriceAud')?.value) || 1);
     document.querySelectorAll('#pList .price-list-row').forEach((row) => {
       const audInput = row.querySelector('input[data-role="aud"]');
       const tokInput = row.querySelector('input[data-role="tokens"]');
       if (audInput && tokInput) {
         const audEx = Number(audInput.value) || 0;
-        const totalAud = audEx + Math.ceil((audEx * gstPct) / 100 - 1e-9);
+        const totalAud = audEx + Math.ceil((audEx * 10) / 100 - 1e-9);
         tokInput.value = Math.ceil(totalAud / tokenPriceAud - 1e-9);
       }
     });

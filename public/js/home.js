@@ -133,61 +133,74 @@ function renderQuote() {
   const q = state.quote;
   if (!q) return;
   const p = quotePrices(q);
+  const isIntl = pricingCurrency() === 'USD';
   const discounted = q.discountCents > 0;
   $('qListRow').hidden = !discounted;
   $('qDiscountRow').hidden = !discounted;
   $('qListLabel').textContent = `Rental, ${q.days} day${q.days > 1 ? 's' : ''}`;
-  $('qList').textContent = formatPrice(p.list);
-  $('qDiscount').textContent = `−${formatPrice(p.discount)}`;
-  $('qSubtotal').textContent = formatPrice(p.subtotal);
-  $('qGst').textContent = formatPrice(p.gst);
-  $('qTotalLabel').textContent = pricingCurrency() === 'AUD' ? 'Total (AUD)' : 'Total (AUD / USD)';
-  $('qTotal').textContent = formatPrice(p.total);
+  const listIncGstAud = Math.ceil((q.listSubtotalCents * 1.1) / 100 - 1e-9) * 100;
+  const discIncGstAud = Math.max(0, listIncGstAud - q.totalCents);
+  $('qList').textContent = isIntl ? `${formatAud(p.list.aud)} (${formatUsd(p.list.usd)})` : `${formatAud(listIncGstAud)} inc. GST`;
+  $('qDiscount').textContent = isIntl ? `−${formatAud(p.discount.aud)} (${formatUsd(p.discount.usd)})` : `−${formatAud(discIncGstAud)}`;
+  if ($('qSubtotal')) $('qSubtotal').textContent = formatPrice(p.subtotal);
+  if ($('qGst')) $('qGst').textContent = formatPrice(p.gst);
+  $('qTotalLabel').textContent = isIntl ? 'Total (AUD / USD)' : 'Total (AUD inc. GST)';
+  $('qTotal').textContent = isIntl
+    ? `${formatAud(p.subtotal.aud)} (${formatUsd(p.subtotal.usd)})`
+    : `${formatAud(p.total.aud)} inc. GST`;
   $('qTokens').textContent = `${formatTokens(q.tokenCents)} tokens`;
-  $('qRate').textContent = pricingCurrency() === 'AUD'
-    ? 'Default token price: 1 token = AUD$1. All invoices are issued in Australian dollars (AUD$).'
-    : `Currency conversion for international visitors: AUD$1 = US$${formatRate(q.fxRate)}. All invoices are in Australian dollars (AUD$).`;
+  $('qRate').textContent = isIntl
+    ? `Currency conversion: AUD$1 = US$${formatRate(q.fxRate)} ($0 tax outside Australia via Stripe Tax). All invoices are in Australian dollars (AUD$).`
+    : 'All Australian prices include 10% GST. Default token price: 1 token = AUD$1. All invoices are in Australian dollars (AUD$).';
 }
 
 function renderPricing() {
   const { cfg } = state;
   const q = cfg.dailyQuote;
   const p = quotePrices(q);
-  $('heroPrice').innerHTML = `<span class="price-main">${formatAud(p.subtotal.aud)}</span><span class="price-sub">${pricingCurrency() === 'USD' ? `(${formatUsd(p.subtotal.usd)}) ` : ''}+ GST per day &middot; ${formatTokens(q.tokenCents)} tokens</span>`;
+  const isIntl = pricingCurrency() === 'USD';
+  $('heroPrice').innerHTML = isIntl
+    ? `<span class="price-main">${formatAud(p.subtotal.aud)}</span><span class="price-sub">(${formatUsd(p.subtotal.usd)}) per day &middot; ${formatTokens(q.tokenCents)} tokens</span>`
+    : `<span class="price-main">${formatAud(p.total.aud)}</span><span class="price-sub">inc. GST per day &middot; ${formatTokens(q.tokenCents)} tokens</span>`;
   renderPriceCards();
 }
 
-/** One price card per hire length (AUD prices and token amounts set by the superadmin). */
+/** One price card per hire length (inc. GST for Australia, or tax-free with USD conversion outside Australia). */
 function renderPriceCards() {
   const list = state.cfg.priceList;
   const day1 = list[0];
   const isIntl = pricingCurrency() === 'USD';
   $('pxCards').innerHTML = list.map((p) => {
     const label = `${p.days} day${p.days > 1 ? 's' : ''}`;
-    const audPrice = formatAud(p.audCents);
-    const usdNote = isIntl ? ` (${formatUsd(p.usdCents)})` : '';
+    const incGstCents = p.totalAudCents ?? Math.ceil((p.audCents * 1.1) / 100 - 1e-9) * 100;
+    const day1IncGstCents = day1.totalAudCents ?? Math.ceil((day1.audCents * 1.1) / 100 - 1e-9) * 100;
+    const displayAudCents = isIntl ? p.audCents : incGstCents;
+    const audPrice = formatAud(displayAudCents);
+    const usdNote = isIntl ? ` (${formatUsd(p.usdCents)})` : ' inc. GST';
     const tokensLabel = p.tokenCents ? ` · ${formatTokens(p.tokenCents)} tokens` : '';
-    const save = { aud: day1.audCents * p.days - p.audCents, usd: day1.usdCents * p.days - p.usdCents };
+    const saveAud = isIntl ? (day1.audCents * p.days - p.audCents) : (day1IncGstCents * p.days - incGstCents);
     const best = p.days === list.length && list.length > 1;
     return `<button type="button" class="postcard${best ? ' best' : ''}" data-days="${p.days}" aria-pressed="${p.days === state.days}"
-        data-testid="price-card-${p.days}" data-agent-id="price-card-${p.days}" aria-label="${label} for ${audPrice}${usdNote} before GST">
+        data-testid="price-card-${p.days}" data-agent-id="price-card-${p.days}" aria-label="${label} for ${audPrice}${usdNote}">
       ${best ? '<span class="pc-ribbon">Best value</span>' : ''}
       <span class="pc-days">${label}</span>
       <strong class="pc-price">${audPrice}</strong>
-      <span class="pc-sub">${isIntl ? `≈ ${formatUsd(p.usdCents)} ` : ''}+ GST${tokensLabel}</span>
-      ${save.aud > 0 ? `<span class="pc-stamp">Save ${formatAud(save.aud)}</span>` : `<span class="pc-stamp plain">${formatAud(p.audCents / p.days)} a day</span>`}
+      <span class="pc-sub">${isIntl ? `≈ ${formatUsd(p.usdCents)}${tokensLabel}` : `inc. GST${tokensLabel}`}</span>
+      ${saveAud > 0 ? `<span class="pc-stamp">Save ${formatAud(saveAud)}</span>` : `<span class="pc-stamp plain">${formatAud(displayAudCents / p.days)} a day</span>`}
     </button>`;
   }).join('');
 }
 
 /** The hire-length cards in the booking form: one choice, which stays selected and sets the booking's days. */
 function renderDayCards() {
+  const isIntl = pricingCurrency() === 'USD';
   $('bkDays').innerHTML = state.cfg.priceList.map((p) => {
     const label = `${p.days} day${p.days > 1 ? 's' : ''}`;
-    const price = formatAud(p.audCents);
+    const incGstCents = p.totalAudCents ?? Math.ceil((p.audCents * 1.1) / 100 - 1e-9) * 100;
+    const price = formatAud(isIntl ? p.audCents : incGstCents);
     const on = p.days === state.days;
     return `<button type="button" class="postcard mini" role="radio" aria-checked="${on}" tabindex="${on ? 0 : -1}" data-days="${p.days}"
-        data-testid="book-days-${p.days}" data-agent-id="book-days-${p.days}" aria-label="${label}, ${price} before GST">
+        data-testid="book-days-${p.days}" data-agent-id="book-days-${p.days}" aria-label="${label}, ${price}">
       <span class="pc-days">${label}</span><strong class="pc-price">${price}</strong></button>`;
   }).join('');
   markDayCards();

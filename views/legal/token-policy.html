@@ -9,9 +9,9 @@
 
         <h2>1. Buying tokens</h2>
         <ul>
-          <li>The default token price is <strong>1 token for {{token_price_aud}}</strong> (for example, 100 tokens cost AUD$100 inc GST).</li>
-          <li><strong>All invoices are in Australian dollars (AUD$).</strong> Our payment provider, Stripe, processes payments and issues tax invoices in Australian dollars.</li>
-          <li>Visitors in Australia and New Zealand see Australian dollars (<strong>AUD$</strong>) directly. Visitors in all other nations are shown an indicative currency conversion of <strong>AUD$1 converted to USD</strong> (<strong>US$</strong>).</li>
+          <li>The default token price is <strong>1 token for {{token_price_aud}}</strong> (plus 10% GST for buyers in Australia, handled automatically by Stripe Tax at checkout; $0 tax for buyers outside Australia).</li>
+          <li><strong>All invoices are in Australian dollars (AUD$).</strong> Our payment provider, Stripe, processes payments and generates official tax invoices in Australian dollars.</li>
+          <li>Visitors in Australia see Australian dollars (<strong>AUD$ inc. GST</strong>) directly. Visitors outside Australia and New Zealand are shown an indicative currency conversion of <strong>AUD$1 converted to USD</strong> (<strong>US$</strong>).</li>
           <li>You can use your tokens for our products and services.</li>
         </ul>
 

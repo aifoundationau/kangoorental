@@ -114,18 +114,21 @@ function renderTokens() {
     ? `International currency conversion: AUD$1 = US$${formatRate(usdPerAud)}.`
     : '';
   const q = cfg.dailyQuote;
-  $('tokDay').textContent = `${formatPrice(quotePrices(q).total)} inc GST = ${formatTokens(q.tokenCents)} tokens`;
+  $('tokDay').textContent = isIntl
+    ? `${formatAud(q.subtotalCents)} (${formatUsd(q.usdSubtotalCents)}) = ${formatTokens(q.tokenCents)} tokens`
+    : `${formatAud(q.totalCents)} inc. GST = ${formatTokens(q.tokenCents)} tokens`;
   $('packs').innerHTML = cfg.tokenPacks.map((n) => {
     const days = Math.floor((n * 100) / q.tokenCents);
-    const audCents = n * tokenPriceAud * 100;
+    const baseAudCents = n * tokenPriceAud * 100;
+    const incGstAudCents = Math.ceil(n * tokenPriceAud * 1.1 - 1e-9) * 100;
     const usdCents = Math.ceil(n * tokenPriceAud * usdPerAud - 1e-9) * 100;
-    const cost = isIntl ? `${formatAud(audCents)} (≈ ${formatUsd(usdCents)})` : formatAud(audCents);
+    const cost = isIntl ? `${formatAud(baseAudCents)} (≈ ${formatUsd(usdCents)})` : `${formatAud(incGstAudCents)} inc. GST`;
     return `<button class="pack" type="button" data-tokens="${n}">
       <strong>${n} tokens</strong><span>${cost}</span>
       <small>${days >= 1 ? `about ${days} day${days > 1 ? 's' : ''} hire` : 'top-up'}</small></button>`;
   }).join('');
   const modes = {
-    stripe: 'Payments are processed securely by Stripe. All invoices are issued in Australian dollars (AUD$).',
+    stripe: 'Payments are processed securely by Stripe in AUD. Stripe Tax automatically applies 10% GST in Australia ($0 tax outside Australia) and generates an official Tax Invoice.',
     demo: 'Demo mode: no payment is taken and tokens are added straight away.',
     disabled: 'Online payments are not available right now. Please message us.',
   };

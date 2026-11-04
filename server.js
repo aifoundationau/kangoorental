@@ -87,8 +87,8 @@ async function pageContext() {
     contact_phone: s.contact_phone || '',
     session_days: String(config.sessionDays),
     max_days: String(days),
-    // "1 day AUD$90, 2 days AUD$165, ... and 7 days AUD$350" (before GST)
-    price_list: Array.from({ length: days }, (_, i) => `${i + 1} day${i ? 's' : ''} AUD$${Math.ceil(quote(s, i + 1, rate).subtotalCents / 100).toLocaleString('en-AU')}`)
+    // "1 day AUD$99, 2 days AUD$189, ... and 7 days AUD$659" (inc. GST for Australia)
+    price_list: Array.from({ length: days }, (_, i) => `${i + 1} day${i ? 's' : ''} AUD$${Math.ceil(quote(s, i + 1, rate).totalCents / 100).toLocaleString('en-AU')}`)
       .join(', ').replace(/, ([^,]*)$/, ' and $1'),
   };
 }

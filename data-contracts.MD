@@ -91,7 +91,10 @@ All API, UI, and SuperAdmin settings inputs are validated on the server with str
 
 ## 4. Stripe Token Checkout Contract (`POST /api/tokens/checkout`)
 
-- All Stripe Checkout sessions and automated tax invoices are issued in **Australian Dollars (`AUD`)**.
-- Line Item 1: Base amount ex-GST (`AUD`).
-- Line Item 2: Australian Goods & Services Tax (10% GST) (`AUD`).
+- Default currency: **`aud`**
+- Automatic Stripe Tax: `automatic_tax: { enabled: true }` (Stripe Checkout automatically detects the buyer's country on the payment page).
+- Tax behavior: `tax_behavior: "exclusive"` on the line item (Stripe adds 10% GST on top if the buyer is in Australia, and $0 tax if they are outside Australia).
+- Official Tax Invoices: `invoice_creation: { enabled: true }` on one-time payments (`mode: "payment"`).
+- All invoices are issued in Australian dollars (`AUD`).
+
 
