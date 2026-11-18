@@ -1,5 +1,5 @@
 // Visitor display settings, saved in this browser only: date and clock formats, which time zone times are shown in,
-// and the place and pricing currency from the location panel. Changes fire a `kangoo:prefs` event so pages can redraw.
+// and the place from the location panel. Changes fire a `kangoo:prefs` event so pages can redraw.
 
 const KEY = 'kangoo.prefs';
 export const DEPOT_TZ = 'Australia/Brisbane';
@@ -14,8 +14,6 @@ function defaults() {
     zone: 'depot', // show times in Brisbane (pickup) time, or 'local' for the visitor's own time zone
     place: null, // a suburb the visitor chose, or their device location: { suburb, state, stateCode, country, countryCode, lat, lng, source }
     localTz: browserTz,
-    // Until the server confirms the visitor's country, guess Australia or New Zealand from the browser's time zone.
-    pricing: /^Australia\/|^Pacific\/(Auckland|Chatham)$/.test(browserTz) ? 'AUD' : 'USD',
   };
 }
 
@@ -41,6 +39,3 @@ export function setPrefs(patch) {
 }
 
 export const displayTimeZone = () => (prefs.zone === 'local' ? prefs.localTz : DEPOT_TZ);
-
-/** 'AUD' for visitors in Australia and New Zealand, 'USD' for everyone else. */
-export const pricingCurrency = () => prefs.pricing;

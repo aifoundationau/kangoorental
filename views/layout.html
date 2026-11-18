@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{page_title}}</title>
-  <meta name="description" content="Hire a Renault Kangoo MAXI (1.5L Diesel Manual 6-Speed) van in Wishart, Brisbane. Book online by the day, pay with tokens.">
+  <meta name="description" content="Hire a Renault Kangoo MAXI (1.5L Diesel Manual 6-Speed) van in Arundel, Gold Coast. Book online by the day in AUD.">
   <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/styles.css">
   <script type="module" src="/js/common.js"></script>
@@ -18,7 +18,7 @@
     <div class="container header-inner">
       <a class="brand" href="/" aria-label="{{business_name}} home">
         <span class="brand-mark" aria-hidden="true">K</span>
-        <span class="brand-text">{{business_name}}<small>Wishart, Brisbane</small></span>
+        <span class="brand-text">{{business_name}}<small>Arundel, Gold Coast</small></span>
       </a>
       <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="siteNav">Menu</button>
       <nav class="site-nav" id="siteNav" aria-label="Main">
@@ -27,8 +27,15 @@
         <a href="/#hub">Weather &amp; time</a>
         <a href="/rental-disclaimer">Insurance</a>
         <span class="nav-auth" data-auth="guest">
-          <div id="navGoogleBtn" class="google-nav-btn" data-testid="nav-google-btn" data-agent-id="nav-google-btn"></div>
-          <noscript><a href="/login">Log in</a></noscript>
+          <a href="/api/auth/google/start" id="navGoogleBtn" class="btn-google-nav" data-testid="nav-google-btn" data-agent-id="nav-google-btn" aria-label="Sign in or register with Google">
+            <svg class="google-g-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="#4285F4" d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"/>
+              <path fill="#34A853" d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.565 24 12.255 24z"/>
+              <path fill="#FBBC05" d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 0 0 0 10.76l3.98-3.09z"/>
+              <path fill="#EA4335" d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.69 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"/>
+            </svg>
+            <span>Sign in / Register</span>
+          </a>
         </span>
         <span class="nav-auth" data-auth="user" hidden>
           <div class="user-menu-wrapper" id="userMenuWrapper">
@@ -68,7 +75,6 @@
         <a href="/terms">Terms of Service</a>
         <a href="/ai-policy">AI Policy (ISO/IEC 42001)</a>
         <a href="/security-policy">Security Policy (ISO/IEC 27001)</a>
-        <a href="/token-policy">Token Policy</a>
       </nav>
       <p class="footer-copy">&copy; 2026 AI Foundation</p>
     </div>
@@ -89,7 +95,7 @@
       </div>
       <div class="ld-tabs" role="tablist" aria-label="Location panel">
         <button type="button" role="tab" id="ldTabHere" aria-controls="ldHere" aria-selected="true" data-ld-tab="here">Here &amp; now</button>
-        <button type="button" role="tab" id="ldTabSettings" aria-controls="ldSettings" aria-selected="false" data-ld-tab="settings">Currency &amp; settings</button>
+        <button type="button" role="tab" id="ldTabSettings" aria-controls="ldSettings" aria-selected="false" data-ld-tab="settings">AUD &amp; settings</button>
       </div>
       <div class="ld-grid">
         <section class="ld-panel" id="ldHere" role="tabpanel" aria-labelledby="ldTabHere" data-ld-panel="here">
@@ -105,7 +111,7 @@
             <form class="ld-search" id="ldSearch" role="search" hidden>
               <label class="sr-only" for="ldQuery">Suburb or town</label>
               <div class="ld-search-row">
-                <input id="ldQuery" type="search" placeholder="Suburb or town, e.g. Wishart QLD" autocomplete="off" maxlength="80">
+                <input id="ldQuery" type="search" placeholder="Suburb or town, e.g. Arundel QLD" autocomplete="off" maxlength="80">
                 <button class="btn btn-small btn-ghost" id="ldSearchCancel" type="button">Cancel</button>
               </div>
               <ul class="ld-results" id="ldResults"></ul>
@@ -140,7 +146,7 @@
           </div>
         </section>
       </div>
-      <p class="ld-credits">Weather by Open-Meteo &middot; places &copy; OpenStreetMap contributors and GeoNames &middot; rates by ExchangeRate-API.
+      <p class="ld-credits">Weather by Open-Meteo &middot; places &copy; OpenStreetMap contributors and GeoNames.
         We use your location only for this panel; it's saved in this browser, not in your account.</p>
     </div>
   </dialog>

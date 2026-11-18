@@ -1,5 +1,5 @@
 // Shared helpers: API calls with CSRF, session state, formatting and toasts.
-import { getPrefs, displayTimeZone, pricingCurrency, DEPOT_TZ } from './prefs.js';
+import { getPrefs, displayTimeZone, DEPOT_TZ } from './prefs.js';
 
 let csrfToken = '';
 let mePromise = null;
@@ -47,38 +47,13 @@ export const isStaff = (user) => user && (user.role === 'admin' || user.role ===
 
 /* ---------- Formatting ---------- */
 
-// Every dollar and token amount is shown as a whole number, rounded up.
-const ceilWhole = (cents) => Math.ceil(cents / 100 - 1e-9) || 0; // `|| 0` turns -0 into 0
-export const formatAud = (cents) => `AUD$${ceilWhole(cents).toLocaleString('en-AU')}`;
-export const formatUsd = (cents) => `US$${ceilWhole(cents).toLocaleString('en-US')}`;
-export const formatTokens = (tokenCents) => ceilWhole(tokenCents).toLocaleString('en-AU');
-export const formatRate = (rate) => {
-  const n = Number(rate);
-  if (!Number.isFinite(n) || n <= 0) return '0.70';
-  const usdPerAud = n > 1.05 ? 1 / n : n;
-  return usdPerAud.toFixed(2);
-};
-
-/**
- * Default currency is AUD. Visitors in Australia and New Zealand see AUD$;
- * visitors in all other nations see AUD$ with the USD conversion.
- */
-export const formatPrice = ({ aud: audCents, usd: usdCents }) => (
-  pricingCurrency() === 'AUD' ? formatAud(audCents) : `${formatAud(audCents)} (${formatUsd(usdCents)})`
-);
-
-/** A quote's amounts in AUD and converted USD (AUD$1 -> USD for visitors outside Australia and New Zealand). */
-export const quotePrices = (q) => {
-  const rate = q.usdPerAud || (q.fxRate > 1.05 ? 1 / q.fxRate : q.fxRate || 0.7);
-  const toUsd = (audCents) => Math.ceil((audCents / 100) * rate - 1e-9) * 100;
-  return {
-    list: { aud: q.listSubtotalCents, usd: q.usdListSubtotalCents ?? toUsd(q.listSubtotalCents) },
-    discount: { aud: q.discountCents, usd: q.usdDiscountCents ?? toUsd(q.discountCents) },
-    subtotal: { aud: q.subtotalCents, usd: q.usdSubtotalCents ?? toUsd(q.subtotalCents) },
-    gst: { aud: q.gstCents, usd: q.usdGstCents ?? toUsd(q.gstCents) },
-    total: { aud: q.totalCents, usd: q.usdTotalCents ?? toUsd(q.totalCents) },
-  };
-};
+/** Formats integer AUD cents cleanly (omits .00 when exact whole dollar, shows 2 decimals otherwise). */
+export function formatAud(cents) {
+  const neg = cents < 0;
+  const n = Math.abs(Number(cents || 0)) / 100;
+  const whole = Number.isInteger(n);
+  return `${neg ? '−' : ''}AUD$${n.toLocaleString('en-AU', { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 })}`;
+}
 
 // Dates and times follow the visitor's settings in the location panel (date order, 12/24-hour clock, time zone).
 const DATE_LOCALES = { dmy: 'en-AU', mdy: 'en-US', ymd: 'en-CA' };
@@ -227,28 +202,14 @@ async function initNavGoogle() {
   const btn = document.getElementById('navGoogleBtn');
   if (!btn || navGoogleInit) return;
   navGoogleInit = true;
-  const ok = await renderGoogleButton(btn, async (credential) => {
-    try {
-      const r = await api('/auth/google', { method: 'POST', body: { credential } });
-      if (r.user) {
-        mePromise = Promise.resolve(r.user);
-        updateNav(r.user);
-        const next = new URLSearchParams(location.search).get('next');
-        if (next && next.startsWith('/') && !next.startsWith('//')) {
-          window.location.href = next;
-        } else if (location.pathname === '/login' || location.pathname === '/register') {
-          window.location.href = isStaff(r.user) ? '/admin' : '/account';
-        } else {
-          window.location.reload();
-        }
-      }
-    } catch (err) {
-      toast(err.message || 'Google sign-in failed. Please try again.', 'error');
-    }
-  }, 'signin_with', { size: 'medium', width: 215, shape: 'pill', theme: 'outline' });
-
-  if (!ok) {
-    btn.innerHTML = '<a href="/login" class="btn btn-small google-fallback-btn" data-testid="nav-login-fallback" data-agent-id="nav-login-fallback">Log in</a>';
+  const cfg = await getConfig().catch(() => null);
+  if (cfg?.googleOAuthEnabled) {
+    const next = new URLSearchParams(location.search).get('next');
+    const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : '';
+    btn.href = safeNext ? `/api/auth/google/start?next=${encodeURIComponent(safeNext)}` : '/api/auth/google/start';
+  } else {
+    btn.href = '/login';
+    btn.textContent = 'Log in';
   }
 }
 

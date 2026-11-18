@@ -6,8 +6,8 @@
             <h1 id="acctName">Welcome</h1>
           </div>
           <div class="balance-chip" aria-live="polite">
-            <span>Token balance</span>
-            <strong id="acctBalance">–</strong>
+            <span>Account status</span>
+            <strong id="acctStatus">–</strong>
           </div>
         </div>
 
@@ -17,7 +17,7 @@
           <nav class="tabs" role="tablist" aria-label="Account sections">
             <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
             <button role="tab" data-tab="bookings">Bookings</button>
-            <button role="tab" data-tab="tokens">Tokens</button>
+            <button role="tab" data-tab="payments">Payments</button>
             <button role="tab" data-tab="licence">Licence</button>
             <button role="tab" data-tab="insurance">Insurance</button>
             <button role="tab" data-tab="messages">Messages <span class="badge" id="tabUnread" hidden></span></button>
@@ -34,22 +34,15 @@
 
           <div class="tab-panel" data-panel="bookings" role="tabpanel" hidden>
             <h2>Your bookings</h2>
-            <p class="hint">Cancel online more than {{cancellation_hours}} hours before pickup for a full token refund. After that, please message us.</p>
+            <p class="hint">Cancel online more than {{cancellation_hours}} hours before pickup for a full AUD refund. After that, please message us.</p>
             <div id="bookingList"></div>
           </div>
 
-          <div class="tab-panel" data-panel="tokens" role="tabpanel" hidden>
-            <h2>Buy tokens</h2>
-            <p>Default token price: <strong>1 token = {{token_price_aud}}</strong>. All prices and tax invoices are in Australian dollars (<strong>AUD$</strong>).
-              <span id="tokRate"></span> One day's rental is currently <strong id="tokDay">–</strong>.</p>
-            <div class="packs" id="packs"></div>
-            <form class="inline-form" id="customTokens">
-              <label for="customAmount">Or choose an amount</label>
-              <input id="customAmount" type="number" min="1" max="5000" step="1" required>
-              <button class="btn" type="submit">Buy tokens</button>
-            </form>
+          <div class="tab-panel" data-panel="payments" role="tabpanel" hidden>
+            <h2>AUD Payments &amp; Invoices</h2>
+            <p>All bookings and official tax invoices are charged in Australian dollars (<strong>AUD$</strong>), inclusive of {{gst_percent}}% Australian GST.</p>
             <p class="hint" id="payMode"></p>
-            <h2 class="mt">Token history</h2>
+            <h2 class="mt">Payment history</h2>
             <div id="txList"></div>
           </div>
 
@@ -131,6 +124,10 @@
             <h2>Your details</h2>
             <dl class="details" id="profileFixed"></dl>
             <form id="profileForm" class="stack">
+              <div class="field" id="pDobField" hidden>
+                <label for="pDob">Date of birth</label>
+                <input id="pDob" name="dob" type="date" autocomplete="bday">
+              </div>
               <div class="field-row">
                 <div class="field">
                   <label for="pPhone">Mobile number</label>
@@ -178,11 +175,15 @@
             </div>
 
             <h2 class="mt">Delete account</h2>
-            <p class="hint">We remove your personal details. Booking and payment records are kept as required by tax law. If you have unused tokens, message us before deleting your account.</p>
+            <p class="hint">We remove your personal details. Booking and payment records are kept as required by tax law.</p>
             <form id="deleteForm" class="inline-form">
               <label for="delPw" id="delPwLabel">Password</label>
-              <input id="delPw" type="password" autocomplete="current-password" required>
-              <button class="btn btn-danger" type="submit">Delete my account</button>
+              <input id="delPw" type="password" autocomplete="current-password" required data-testid="delete-password" data-agent-id="delete-password">
+              <button class="btn btn-danger" type="button" id="delStartBtn" data-testid="delete-account-start" data-agent-id="delete-account-start">Delete my account</button>
+              <div id="delConfirmBox" class="btn-row" hidden>
+                <button class="btn btn-danger" type="submit" id="delConfirmBtn" data-testid="delete-account-confirm" data-agent-id="delete-account-confirm">Confirm delete</button>
+                <button class="btn btn-ghost" type="button" id="delCancelBtn" data-testid="delete-account-cancel" data-agent-id="delete-account-cancel">Cancel</button>
+              </div>
             </form>
           </div>
         </div>

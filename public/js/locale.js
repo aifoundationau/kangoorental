@@ -1,9 +1,8 @@
 import { api, escapeHtml, formatDateTime, formatLongDate, formatTime, weatherIcon } from './common.js';
 import { getPrefs, setPrefs, DEPOT_TZ } from './prefs.js';
 
-// The thin location bar at the bottom of every page and its panel: closest suburb, local time and weather, local
-// currency and the US dollar rate, and how dates and times are shown. The visitor's country also sets the pricing
-// currency (see prefs.js): AUD in Australia and New Zealand, USD everywhere else.
+// The thin location bar at the bottom of every page and its panel: closest suburb, local time and weather,
+// AUD-only currency notice, and how dates and times are shown.
 
 const $ = (id) => document.getElementById(id);
 const CACHE_KEY = 'kangoo.locale';
@@ -22,19 +21,6 @@ const SOURCE_NOTE = {
   ip: 'Approximate, based on your internet connection.',
   depot: 'This is our pickup depot. Use your location or choose your suburb.',
 };
-
-const currencyNames = new Intl.DisplayNames(['en'], { type: 'currency' });
-function currencyName(code) {
-  try {
-    return currencyNames.of(code);
-  } catch {
-    return code;
-  }
-}
-function money(code, amount) {
-  const digits = amount >= 100 ? 2 : 4;
-  return new Intl.NumberFormat('en', { style: 'currency', currency: code, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(amount);
-}
 
 /** The place shown: a suburb the visitor chose or their device location, else what the server worked out. */
 const currentPlace = () => getPrefs().place || info?.place || null;
@@ -65,7 +51,7 @@ function remember(d) {
 
 function apply(d) {
   info = d;
-  setPrefs({ localTz: d.timezone || browserTz, ...(d.pricingCurrency ? { pricing: d.pricingCurrency } : {}) });
+  setPrefs({ localTz: d.timezone || browserTz });
   render();
 }
 
@@ -190,10 +176,7 @@ function renderBar() {
   const w = info?.weather?.current;
   setItem('lbWeather', w && `<span aria-hidden="true">${weatherIcon(w.code)}</span> ${Math.round(w.temperature)}°C`);
   setItem('lbTime', info && escapeHtml(formatTime(Date.now(), placeTz())));
-  const c = info?.currency;
-  const isAuNz = getPrefs().pricing === 'AUD';
-  const usdRate = info?.usdPerAud ? Number(info.usdPerAud).toFixed(2) : null;
-  setItem('lbMoney', c && escapeHtml(isAuNz ? 'AUD$' : `AUD$1 = US$${usdRate || '0.70'}`));
+  setItem('lbMoney', 'AUD$');
 }
 
 function renderPlace() {
@@ -222,7 +205,7 @@ function renderClock() {
   $('ldDate').textContent = formatLongDate(now, tz);
   $('ldZone').textContent = tz === DEPOT_TZ
     ? `${tzName(tz)} (${offset}), same as our pickup depot`
-    : `${tzName(tz)} (${offset}) · Brisbane pickup time ${formatTime(now, DEPOT_TZ)}`;
+    : `${tzName(tz)} (${offset}) · Gold Coast pickup time ${formatTime(now, DEPOT_TZ)}`;
 }
 
 function renderWeather() {
@@ -244,17 +227,9 @@ function renderWeather() {
 }
 
 function renderMoney() {
-  const c = info?.currency;
-  const isAuNz = getPrefs().pricing === 'AUD';
-  const usdRate = info?.usdPerAud ? Number(info.usdPerAud).toFixed(2) : '0.70';
-  $('ldCurrency').textContent = c ? `${currencyName(c.code)} (${c.code})` : 'Australian Dollar (AUD)';
-  $('ldRate').textContent = isAuNz
-    ? 'Default currency: AUD$ (1 token = AUD$1)'
-    : `AUD$1 = US$${usdRate}`;
-  const text = isAuNz
-    ? 'Prices and all invoices on this site are in Australian dollars (AUD$).'
-    : `Currency conversion for visitors outside Australia and New Zealand shows AUD$1 = US$${usdRate}. All invoices are issued in Australian dollars (AUD$).`;
-  $('ldPricing').textContent = text;
+  $('ldCurrency').textContent = 'Australian Dollar (AUD)';
+  $('ldRate').textContent = 'AUD$ (inc. 10% GST)';
+  $('ldPricing').textContent = 'All prices, payments and tax invoices on this site are in Australian dollars (AUD$).';
 }
 
 function renderSettings() {
@@ -262,7 +237,7 @@ function renderSettings() {
   $('ldDateFmt').value = prefs.dateFormat;
   $('ldClockFmt').value = prefs.clock;
   $('ldZoneMode').value = prefs.zone;
-  $('ldZoneMode').options[1].textContent = prefs.localTz === DEPOT_TZ ? 'My time zone (same as Brisbane)' : `My time zone (${tzName(prefs.localTz)})`;
+  $('ldZoneMode').options[1].textContent = prefs.localTz === DEPOT_TZ ? 'My time zone (same as Gold Coast)' : `My time zone (${tzName(prefs.localTz)})`;
   $('ldExample').textContent = `Bookings show like this: ${formatDateTime(Date.now())}`;
 }
 
@@ -301,7 +276,7 @@ function init() {
   const fill = (id, options) => { $(id).innerHTML = options.map(([v, label]) => `<option value="${v}">${label}</option>`).join(''); };
   fill('ldDateFmt', [['dmy', 'Day first: 31 Oct 2026'], ['mdy', 'Month first: Oct 31, 2026'], ['ymd', 'Year first: 2026-10-31']]);
   fill('ldClockFmt', [['12', '12-hour: 3:30 pm'], ['24', '24-hour: 15:30']]);
-  fill('ldZoneMode', [['depot', 'Brisbane time (pickup depot)'], ['local', 'My time zone']]);
+  fill('ldZoneMode', [['depot', 'Gold Coast time (pickup depot)'], ['local', 'My time zone']]);
   $('ldDateFmt').addEventListener('change', (e) => setPrefs({ dateFormat: e.target.value }));
   $('ldClockFmt').addEventListener('change', (e) => setPrefs({ clock: e.target.value }));
   $('ldZoneMode').addEventListener('change', (e) => setPrefs({ zone: e.target.value }));

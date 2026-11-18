@@ -1,13 +1,16 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
 import { firestore, col, docData, nowIso, getSettings, num, audit, FieldValue } from '../db.js';
 import {
   HttpError, hashPassword, verifyPassword, createSession, destroySession, rateLimit, requireUser,
-  destroyAllSessions, isStaff,
+  destroyAllSessions, isStaff, setOAuthStateCookie, consumeOAuthStateCookie,
 } from '../security.js';
 import { verifyLicence } from '../licence.js';
-import { verifyGoogleCredential } from '../google.js';
+import {
+  verifyGoogleCredential, googleRedirectUri, createGoogleAuthUrl, exchangeGoogleCode,
+} from '../google.js';
 import {
   str, PATTERNS, AU_STATES, validDate, distanceKm, ageOn, brisbaneToday,
 } from '../util.js';
@@ -47,7 +50,6 @@ export function publicUser(u, extra = {}) {
     policyNumber: u.policyNumber,
     policyExpiry: u.policyExpiry,
     indemnityConfirmed: Boolean(u.indemnityConfirmedAt),
-    tokenCents: u.tokenCents ?? 0,
     hasPassword: u.hasPassword ?? Boolean(u.passwordHash),
     googleLinked: Boolean(u.googleSub),
     picture: u.picture || '',
@@ -115,7 +117,6 @@ export async function createUser(fields) {
     t.create(userRef, {
       role: 'supporter',
       licenceStatus: 'unverified',
-      tokenCents: 0,
       disabled: false,
       createdAt: nowIso(),
       ...fields,
@@ -225,17 +226,15 @@ export async function superadminFromGoogle(google, ip) {
   return user;
 }
 
-// Google sign-in: logs in an existing account (linking Google to it on first use, matched by verified email),
-// or tells the browser to continue to registration with the Google details prefilled.
-router.post('/auth/google', authLimiter, async (req, res) => {
-  const google = await verifyGoogleCredential(req.body?.credential);
+async function completeGoogleSignIn(google, req, res) {
   if (config.superadminEmails.includes(google.email)) {
     const owner = await superadminFromGoogle(google, req.ip);
     if (req.sessionId) await destroySession(req, res);
     const csrf = await createSession(res, owner.id);
     audit(owner.id, 'login', 'Google (superadmin)', req.ip);
-    return res.json({ user: publicUser(owner), csrf });
+    return { user: owner, csrf, isNew: false };
   }
+  let isNew = false;
   let user = await findUserByGoogleSub(google.sub);
   if (!user) {
     user = await findUserByEmail(google.email);
@@ -244,10 +243,15 @@ router.post('/auth/google', authLimiter, async (req, res) => {
       const linkUpdates = { googleSub: google.sub };
       if (google.picture && user.picture !== google.picture) linkUpdates.picture = google.picture;
       await col.users.doc(user.id).update(linkUpdates);
+      user = { ...user, ...linkUpdates };
       audit(user.id, 'google.link', google.email, req.ip);
     }
+  } else if (google.picture && user.picture !== google.picture) {
+    await col.users.doc(user.id).update({ picture: google.picture });
+    user = { ...user, picture: google.picture };
   }
   if (!user) {
+    // First-time Google registration receives the 'supporter' role.
     const id = await createUser({
       role: 'supporter',
       email: google.email,
@@ -258,6 +262,7 @@ router.post('/auth/google', authLimiter, async (req, res) => {
     });
     audit(id, 'register.google', `${google.email}`, req.ip);
     user = await getUser(id);
+    isNew = true;
   }
   if (user.disabled) {
     audit(user.id, 'login.failed', `${google.email} (Google, disabled)`, req.ip);
@@ -266,7 +271,55 @@ router.post('/auth/google', authLimiter, async (req, res) => {
   if (req.sessionId) await destroySession(req, res);
   const csrf = await createSession(res, user.id);
   audit(user.id, 'login', 'Google', req.ip);
-  res.json({ user: publicUser({ ...user, googleSub: google.sub }), csrf });
+  return { user: { ...user, googleSub: google.sub }, csrf, isNew };
+}
+
+// Google ID-token sign-in (supports direct GSI / API callers).
+router.post('/auth/google', authLimiter, async (req, res) => {
+  const google = await verifyGoogleCredential(req.body?.credential);
+  const { user, csrf } = await completeGoogleSignIn(google, req, res);
+  res.json({ user: publicUser(user), csrf });
+});
+
+// Google OAuth 2.0 Authorization Code + PKCE flow (top-right "Sign in / Register" button).
+router.get('/auth/google/start', authLimiter, (req, res) => {
+  if (!config.googleOAuthEnabled) return res.redirect('/login?error=google_unavailable');
+  const rawNext = String(req.query.next || '');
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '';
+  const state = crypto.randomBytes(32).toString('base64url');
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const codeChallenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  setOAuthStateCookie(res, { state, verifier, next });
+  res.redirect(createGoogleAuthUrl({ redirectUri: googleRedirectUri(req), state, codeChallenge }));
+});
+
+router.get('/auth/google/callback', authLimiter, async (req, res) => {
+  const saved = consumeOAuthStateCookie(req, res);
+  if (req.query.error) return res.redirect('/login?error=google_cancelled');
+  const code = String(req.query.code || '');
+  const state = String(req.query.state || '');
+  const savedState = String(saved?.state || '');
+  const stateOk = Boolean(code && savedState && saved?.verifier) &&
+    state.length === savedState.length &&
+    crypto.timingSafeEqual(Buffer.from(state), Buffer.from(savedState));
+  if (!stateOk) return res.redirect('/login?error=google_state');
+
+  try {
+    const google = await exchangeGoogleCode({
+      code,
+      redirectUri: googleRedirectUri(req),
+      codeVerifier: saved.verifier,
+    });
+    const { user, isNew } = await completeGoogleSignIn(google, req, res);
+    const dest = saved.next || (isStaff(user) ? '/admin' : isNew ? '/account?welcome=1' : '/account');
+    return res.redirect(dest);
+  } catch (err) {
+    console.warn('[google] callback error:', err?.message || err);
+    if (err instanceof HttpError && err.status === 401 && /disabled/i.test(err.message)) {
+      return res.redirect('/login?error=google_disabled');
+    }
+    return res.redirect('/login?error=google_failed');
+  }
 });
 
 router.post('/auth/logout', async (req, res) => {

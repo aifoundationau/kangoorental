@@ -1,4 +1,4 @@
-import { api, isStaff, showError, setBusy, withShrunkLicence, renderGoogleButton } from './common.js';
+import { api, getConfig, showError, setBusy, withShrunkLicence } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const GOOGLE_KEY = 'kangoo.google';
@@ -20,19 +20,13 @@ function applyGoogle(profile) {
   note.hidden = false;
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const saved = JSON.parse(sessionStorage.getItem(GOOGLE_KEY) || 'null');
   if (saved?.credential) applyGoogle(saved);
   else {
-    renderGoogleButton($('googleBtn'), async (credential) => {
-      try {
-        const r = await api('/auth/google', { method: 'POST', body: { credential } });
-        if (r.needsRegistration) return applyGoogle({ credential, ...r.profile });
-        window.location.href = isStaff(r.user) ? '/admin' : '/account'; // already registered: now logged in
-      } catch (err) {
-        showError($('regError'), err);
-      }
-    }, 'signup_with');
+    const cfg = await getConfig().catch(() => null);
+    const block = document.querySelector('[data-google]');
+    if (block) block.hidden = !cfg?.googleOAuthEnabled;
   }
 
   const form = $('registerForm');

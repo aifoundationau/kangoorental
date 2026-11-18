@@ -1,8 +1,8 @@
 import {
-  api, getMe, getConfig, isStaff, formatAud, formatUsd, formatPrice, quotePrices, formatTokens, formatRate, formatDate, formatDateTime, formatTime,
+  api, getMe, getConfig, isStaff, formatAud, formatDate, formatDateTime, formatTime,
   formatLongDate, weatherIcon, getDeviceLocation, toast, showError, setBusy, escapeHtml, ApiError,
 } from './common.js';
-import { pricingCurrency, DEPOT_TZ } from './prefs.js';
+import { DEPOT_TZ } from './prefs.js';
 
 const DAY = 86400000;
 const PENDING_KEY = 'kangoo.pendingBooking';
@@ -132,72 +132,52 @@ function renderReturn() {
 function renderQuote() {
   const q = state.quote;
   if (!q) return;
-  const p = quotePrices(q);
-  const isIntl = pricingCurrency() === 'USD';
   const discounted = q.discountCents > 0;
   $('qListRow').hidden = !discounted;
   $('qDiscountRow').hidden = !discounted;
-  $('qListLabel').textContent = `Rental, ${q.days} day${q.days > 1 ? 's' : ''}`;
-  const listIncGstAud = Math.ceil((q.listSubtotalCents * 1.1) / 100 - 1e-9) * 100;
-  const discIncGstAud = Math.max(0, listIncGstAud - q.totalCents);
-  $('qList').textContent = isIntl ? `${formatAud(p.list.aud)} (${formatUsd(p.list.usd)})` : `${formatAud(listIncGstAud)} inc. GST`;
-  $('qDiscount').textContent = isIntl ? `−${formatAud(p.discount.aud)} (${formatUsd(p.discount.usd)})` : `−${formatAud(discIncGstAud)}`;
-  if ($('qSubtotal')) $('qSubtotal').textContent = formatPrice(p.subtotal);
-  if ($('qGst')) $('qGst').textContent = formatPrice(p.gst);
-  $('qTotalLabel').textContent = isIntl ? 'Total (AUD / USD)' : 'Total (AUD inc. GST)';
-  $('qTotal').textContent = isIntl
-    ? `${formatAud(p.subtotal.aud)} (${formatUsd(p.subtotal.usd)})`
-    : `${formatAud(p.total.aud)} inc. GST`;
-  $('qTokens').textContent = `${formatTokens(q.tokenCents)} tokens`;
-  $('qRate').textContent = isIntl
-    ? `Currency conversion: AUD$1 = US$${formatRate(q.fxRate)} ($0 tax outside Australia via Stripe Tax). All invoices are in Australian dollars (AUD$).`
-    : 'All Australian prices include 10% GST. Default token price: 1 token = AUD$1. All invoices are in Australian dollars (AUD$).';
+  $('qListLabel').textContent = `Standard rate, ${q.days} day${q.days > 1 ? 's' : ''} (ex. GST)`;
+  $('qList').textContent = formatAud(q.listSubtotalCents);
+  $('qDiscount').textContent = `−${formatAud(q.discountCents)}`;
+  if ($('qSubtotal')) $('qSubtotal').textContent = formatAud(q.subtotalCents);
+  if ($('qGst')) $('qGst').textContent = formatAud(q.gstCents);
+  $('qTotalLabel').textContent = 'Total (AUD inc. GST)';
+  $('qTotal').textContent = `${formatAud(q.totalCents)} inc. GST`;
+  $('qRate').textContent = 'All prices are in Australian dollars (AUD) and include 10% GST. Paid securely via Stripe with an official Tax Invoice.';
+  if (state.me && !isStaff(state.me)) {
+    $('bkSubmit').textContent = `Book & pay ${formatAud(q.totalCents)}`;
+  }
 }
 
 function renderPricing() {
-  const { cfg } = state;
-  const q = cfg.dailyQuote;
-  const p = quotePrices(q);
-  const isIntl = pricingCurrency() === 'USD';
-  $('heroPrice').innerHTML = isIntl
-    ? `<span class="price-main">${formatAud(p.subtotal.aud)}</span><span class="price-sub">(${formatUsd(p.subtotal.usd)}) per day &middot; ${formatTokens(q.tokenCents)} tokens</span>`
-    : `<span class="price-main">${formatAud(p.total.aud)}</span><span class="price-sub">inc. GST per day &middot; ${formatTokens(q.tokenCents)} tokens</span>`;
+  const q = state.cfg.dailyQuote;
+  $('heroPrice').innerHTML = `<span class="price-main">${formatAud(q.totalCents)}</span><span class="price-sub">inc. GST per day (AUD)</span>`;
   renderPriceCards();
 }
 
-/** One price card per hire length (inc. GST for Australia, or tax-free with USD conversion outside Australia). */
+/** One price card per hire length in AUD inc. GST. */
 function renderPriceCards() {
   const list = state.cfg.priceList;
-  const day1 = list[0];
-  const isIntl = pricingCurrency() === 'USD';
   $('pxCards').innerHTML = list.map((p) => {
     const label = `${p.days} day${p.days > 1 ? 's' : ''}`;
-    const incGstCents = p.totalAudCents ?? Math.ceil((p.audCents * 1.1) / 100 - 1e-9) * 100;
-    const day1IncGstCents = day1.totalAudCents ?? Math.ceil((day1.audCents * 1.1) / 100 - 1e-9) * 100;
-    const displayAudCents = isIntl ? p.audCents : incGstCents;
-    const audPrice = formatAud(displayAudCents);
-    const usdNote = isIntl ? ` (${formatUsd(p.usdCents)})` : ' inc. GST';
-    const tokensLabel = p.tokenCents ? ` · ${formatTokens(p.tokenCents)} tokens` : '';
-    const saveAud = isIntl ? (day1.audCents * p.days - p.audCents) : (day1IncGstCents * p.days - incGstCents);
+    const audPrice = formatAud(p.totalCents);
+    const saveCents = p.discountIncGstCents ?? 0;
     const best = p.days === list.length && list.length > 1;
     return `<button type="button" class="postcard${best ? ' best' : ''}" data-days="${p.days}" aria-pressed="${p.days === state.days}"
-        data-testid="price-card-${p.days}" data-agent-id="price-card-${p.days}" aria-label="${label} for ${audPrice}${usdNote}">
+        data-testid="price-card-${p.days}" data-agent-id="price-card-${p.days}" aria-label="${label} for ${audPrice} inc. GST">
       ${best ? '<span class="pc-ribbon">Best value</span>' : ''}
       <span class="pc-days">${label}</span>
       <strong class="pc-price">${audPrice}</strong>
-      <span class="pc-sub">${isIntl ? `≈ ${formatUsd(p.usdCents)}${tokensLabel}` : `inc. GST${tokensLabel}`}</span>
-      ${saveAud > 0 ? `<span class="pc-stamp">Save ${formatAud(saveAud)}</span>` : `<span class="pc-stamp plain">${formatAud(displayAudCents / p.days)} a day</span>`}
+      <span class="pc-sub">inc. GST</span>
+      ${saveCents > 0 ? `<span class="pc-stamp">Save ${formatAud(saveCents)}</span>` : `<span class="pc-stamp plain">${formatAud(Math.round(p.totalCents / p.days))} a day</span>`}
     </button>`;
   }).join('');
 }
 
 /** The hire-length cards in the booking form: one choice, which stays selected and sets the booking's days. */
 function renderDayCards() {
-  const isIntl = pricingCurrency() === 'USD';
   $('bkDays').innerHTML = state.cfg.priceList.map((p) => {
     const label = `${p.days} day${p.days > 1 ? 's' : ''}`;
-    const incGstCents = p.totalAudCents ?? Math.ceil((p.audCents * 1.1) / 100 - 1e-9) * 100;
-    const price = formatAud(isIntl ? p.audCents : incGstCents);
+    const price = formatAud(p.totalCents);
     const on = p.days === state.days;
     return `<button type="button" class="postcard mini" role="radio" aria-checked="${on}" tabindex="${on ? 0 : -1}" data-days="${p.days}"
         data-testid="book-days-${p.days}" data-agent-id="book-days-${p.days}" aria-label="${label}, ${price}">
@@ -315,7 +295,7 @@ function renderAuthPanel() {
   }
   hint.hidden = true;
   box.hidden = false;
-  submit.textContent = 'Confirm booking';
+  submit.textContent = state.quote ? `Book & pay ${formatAud(state.quote.totalCents)}` : 'Book & pay (AUD)';
   const items = [];
   const radius = state.cfg.bookingRadiusKm;
   items.push(state.area?.inArea
@@ -326,9 +306,6 @@ function renderAuthPanel() {
   items.push(`<li class="${licenceOk ? 'ok' : 'todo'}">Driver licence ${licenceOk ? 'verified' : `<a href="/account#licence">${me.licenceStatus === 'pending' ? 'awaiting review' : 'needs verifying'}</a>`}</li>`);
   const insOk = me.insurer && me.indemnityConfirmed && me.policyExpiry;
   items.push(`<li class="${insOk ? 'ok' : 'todo'}">Insurance ${insOk ? `on file (${escapeHtml(me.insurer)}, expires ${escapeHtml(me.policyExpiry)})` : '<a href="/account#insurance">add your insurance details</a>'}</li>`);
-  const need = state.quote?.tokenCents ?? 0;
-  const tokensOk = me.tokenCents >= need;
-  items.push(`<li class="${tokensOk ? 'ok' : 'todo'}">Tokens: ${formatTokens(me.tokenCents)} available${tokensOk ? '' : ` &middot; <a href="/account?buy=${Math.ceil((need - me.tokenCents) / 100)}#tokens">buy ${Math.ceil((need - me.tokenCents) / 100)} more</a>`}</li>`);
   $('checklist').innerHTML = `<ul>${items.join('')}</ul>`;
 }
 
@@ -394,9 +371,9 @@ async function submitBooking(e) {
     return showError(errEl, err);
   }
   setBusy(btn, false);
-  setBusy(btn, true, 'Booking…');
+  setBusy(btn, true, 'Starting booking…');
   try {
-    const { booking } = await api('/bookings', {
+    const r = await api('/bookings', {
       method: 'POST',
       body: {
         date: state.date, time: state.time, days: state.days, acceptDisclaimer: true, note: $('bkNote').value,
@@ -404,8 +381,12 @@ async function submitBooking(e) {
       },
     });
     sessionStorage.removeItem(PENDING_KEY);
-    toast(`Booked! Reference ${booking.ref}`, 'success');
-    window.location.href = `/account?booked=${encodeURIComponent(booking.ref)}#bookings`;
+    if (r.checkoutUrl) {
+      window.location.href = r.checkoutUrl;
+      return;
+    }
+    toast(`Booked! Reference ${r.booking.ref}`, 'success');
+    window.location.href = `/account?booked=${encodeURIComponent(r.booking.ref)}#bookings`;
   } catch (err) {
     showError(errEl, err);
     if (err instanceof ApiError && err.status === 409) {
@@ -445,11 +426,6 @@ async function loadHub() {
     frame.src = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - d},${lat - d},${lng + d},${lat + d}&layer=mapnik&marker=${lat},${lng}`;
     $('hubMap').replaceChildren(frame);
     $('hubDirections').href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-
-    $('hubFx').textContent = `AUD$1 = US$${formatRate(hub.fx.rate)}`;
-    $('hubFxSource').textContent = hub.fx.mode === 'live'
-      ? `Market rate from ${hub.fx.source}${hub.fx.date ? `, ${hub.fx.date}` : ''} (shown to visitors outside AU & NZ).`
-      : `${hub.fx.source} (shown to visitors outside AU & NZ).`;
 
     const w = hub.weather;
     if (!w) {

@@ -30,7 +30,7 @@ const LicenceSchema = {
   additionalProperties: false,
 };
 
-const SYSTEM_PROMPT = `You read photos of Australian driver licences for a van rental business in Brisbane.
+const SYSTEM_PROMPT = `You read photos of Australian driver licences for a van rental business on the Gold Coast, Queensland.
 Extract the printed details exactly as they appear. Do not guess: if a field is unreadable, return an empty string.
 Dates must be returned as YYYY-MM-DD (Australian licences print dates as DD/MM/YYYY or DD MMM YYYY).
 Report honestly whether the image is really a driver licence and whether anything looks altered.

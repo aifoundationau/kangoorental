@@ -1,12 +1,14 @@
 import { Router } from 'express';
-import { firestore, col, allDocs, nowIso, getSettings, num, audit, FieldValue } from '../db.js';
+import { firestore, col, allDocs, nowIso, getSettings, num, audit } from '../db.js';
 import { HttpError, requireUser } from '../security.js';
-import { paymentsMode } from '../payments.js';
+import {
+  paymentsMode, createBookingCheckout, confirmBookingCheckout, expirePendingBooking, refundStripePayment, HOLD_MS,
+} from '../payments.js';
 import { checkServiceArea } from './auth.js';
-import { currentRate } from '../fx.js';
 import { config } from '../config.js';
 import {
-  quote, maxRentalDays, priceTable, tokenTable, handoverRules, isHandoverDay, dayLabel, brisbaneTime, brisbaneToday, addDays, bookingRef, int, validDate, str, DAY,
+  quote, maxRentalDays, priceTable, handoverRules, isHandoverDay, dayLabel, brisbaneTime, brisbaneToday, addDays,
+  bookingRef, int, validDate, str, DAY,
 } from '../util.js';
 
 export const router = Router();
@@ -14,30 +16,24 @@ export const router = Router();
 const CALENDAR_LOCK = col.locks.doc('calendar');
 
 export function publicConfig(settings) {
-  const fx = currentRate(settings);
   return {
     businessName: settings.business_name,
-    priceBasis: settings.price_basis,
-    tokenPriceAud: num(settings, 'token_price_aud') || 1,
-    tokenShareFee: num(settings, 'token_share_fee') || 1,
+    currency: 'AUD',
     dailyRateAudCents: priceTable(settings)[0] * 100,
-    dailyRateTokenCents: tokenTable(settings)[0] * 100,
     gstRateBp: num(settings, 'gst_rate_bp'),
-    fx,
-    dailyQuote: quote(settings, 1, fx.rate),
-    // Price for each hire length, before GST, in AUD, converted USD (for outside AU/NZ), and customizable tokens.
+    dailyQuote: quote(settings, 1),
+    // Price for each hire length in AUD (ex-GST, GST, and inc-GST).
     priceList: Array.from({ length: maxRentalDays(settings) }, (_, i) => {
-      const q = quote(settings, i + 1, fx.rate);
+      const q = quote(settings, i + 1);
       return {
-        days: i + 1,
-        audCents: q.subtotalCents,
-        totalAudCents: q.totalCents,
-        usdCents: q.usdSubtotalCents,
-        totalUsdCents: q.usdTotalCents,
-        tokenCents: q.tokenCents,
+        days: q.days,
+        subtotalCents: q.subtotalCents,
+        gstCents: q.gstCents,
+        totalCents: q.totalCents,
+        listTotalCents: q.listTotalCents,
+        discountIncGstCents: q.discountIncGstCents,
       };
     }),
-    tokenPacks: settings.token_packs.split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0),
     minDriverAge: num(settings, 'min_driver_age'),
     bookingRadiusKm: num(settings, 'registration_radius_km'),
     pickup: { label: settings.pickup_label, lat: num(settings, 'pickup_lat'), lng: num(settings, 'pickup_lng') },
@@ -56,24 +52,30 @@ export function publicConfig(settings) {
     paymentsMode,
     licenceAi: config.licenceAiEnabled,
     googleClientId: config.googleClientId,
+    googleOAuthEnabled: config.googleOAuthEnabled,
     today: brisbaneToday(),
   };
 }
 
 /**
- * Busy intervals (epoch ms) overlapping [fromMs, toMs): live bookings padded by the turnaround buffer,
- * plus admin blocks. Pass a transaction `t` to read inside it.
+ * Busy intervals (epoch ms) overlapping [fromMs, toMs): live bookings (plus active checkout holds)
+ * padded by the turnaround buffer, plus admin blocks. Pass a transaction `t` to read inside it.
  */
 export async function busyRanges(fromMs, toMs, settings, t = null) {
   const buffer = num(settings, 'buffer_hours') * 3600000;
   const read = (q) => (t ? t.get(q) : q.get());
+  const now = Date.now();
   // Single-field range query (no composite index needed); the rest is filtered here.
   const [bookingSnap, blockSnap] = await Promise.all([
     read(col.bookings.where('endAt', '>', fromMs - buffer)),
     read(col.blocks),
   ]);
   const bookings = allDocs(bookingSnap)
-    .filter((b) => (b.status === 'confirmed' || b.status === 'active') && b.startAt - buffer < toMs)
+    .filter((b) => (
+      b.status === 'confirmed' ||
+      b.status === 'active' ||
+      (b.status === 'pending_payment' && b.paymentExpiresAt > now)
+    ) && b.startAt - buffer < toMs)
     .map((b) => ({ start: b.startAt - buffer, end: b.endAt + buffer, kind: 'booking' }));
   const blocks = allDocs(blockSnap)
     .map((b) => ({ start: brisbaneTime(b.startDate), end: brisbaneTime(addDays(b.endDate, 1)), kind: 'blocked' }))
@@ -96,7 +98,7 @@ router.get('/availability', async (req, res) => {
 router.get('/quote', async (req, res) => {
   const settings = await getSettings();
   const days = int(req.query.days ?? 1, { field: 'Days', min: 1, max: maxRentalDays(settings) });
-  res.json(quote(settings, days, currentRate(settings).rate));
+  res.json(quote(settings, days));
 });
 
 export function bookingView(b) {
@@ -106,13 +108,15 @@ export function bookingView(b) {
     startAt: b.startAt,
     endAt: b.endAt,
     days: b.days,
-    fxRate: b.fxRate,
+    currency: 'AUD',
     subtotalCents: b.subtotalCents,
     gstCents: b.gstCents,
     totalCents: b.totalCents,
-    tokenCents: b.tokenCents,
+    paidAudCents: b.paidAudCents ?? b.totalCents,
+    refundedAudCents: b.refundedAudCents || 0,
     status: b.status,
-    refundedTokenCents: b.refundedTokenCents || 0,
+    paymentStatus: b.paymentStatus || (b.status === 'cancelled' ? 'cancelled' : 'paid'),
+    paymentProvider: b.paymentProvider || 'demo',
     customerNote: b.customerNote,
     createdAt: b.createdAt,
   };
@@ -128,6 +132,8 @@ function bookingBlockers(user, endAtMs) {
 
 router.post('/bookings', requireUser, async (req, res) => {
   if (req.user.role !== 'supporter') throw new HttpError(403, 'Staff accounts cannot make bookings.');
+  if (paymentsMode === 'disabled') throw new HttpError(503, 'Online payments are not available right now. Please message us.');
+
   const settings = await getSettings();
   const b = req.body || {};
   const date = validDate(b.date, 'Pickup date');
@@ -164,10 +170,43 @@ router.post('/bookings', requireUser, async (req, res) => {
     throw new HttpError(400, `Bookings can be made up to ${settings.max_advance_days} days ahead.`);
   }
 
-  const q = quote(settings, days, currentRate(settings).rate);
+  const q = quote(settings, days);
   const userRef = col.users.doc(req.user.id);
   const bookingRefDoc = col.bookings.doc();
   const ref = bookingRef();
+  const createdAt = nowIso();
+  const isStripe = paymentsMode === 'stripe';
+  const paymentExpiresAt = isStripe ? Date.now() + HOLD_MS : null;
+
+  const docPayload = {
+    ref,
+    userId: req.user.id,
+    userName: req.user.fullName,
+    userEmail: req.user.email,
+    userPhone: req.user.phone,
+    startAt,
+    endAt,
+    days,
+    currency: 'AUD',
+    gstRateBp: q.gstRateBp,
+    bookedFromKm: area.distanceKm,
+    listSubtotalCents: q.listSubtotalCents,
+    discountCents: q.discountCents,
+    subtotalCents: q.subtotalCents,
+    gstCents: q.gstCents,
+    totalCents: q.totalCents,
+    paidAudCents: isStripe ? 0 : q.totalCents,
+    refundedAudCents: 0,
+    status: isStripe ? 'pending_payment' : 'confirmed',
+    paymentStatus: isStripe ? 'unpaid' : 'paid',
+    paymentProvider: paymentsMode,
+    ...(isStripe ? { paymentExpiresAt } : { paidAt: createdAt }),
+    insurer: req.user.insurer || null,
+    policyNumber: req.user.policyNumber || null,
+    disclaimerAcceptedAt: createdAt,
+    customerNote: note || null,
+    createdAt,
+  };
 
   await firestore.runTransaction(async (t) => {
     // Every booking transaction reads and writes the calendar lock, so two overlapping requests can't both commit.
@@ -185,85 +224,130 @@ router.post('/bookings', requireUser, async (req, res) => {
     if (busy.some((r) => r.start < endAt && r.end > startAt)) {
       throw new HttpError(409, 'Sorry, the van is not available for that time. Please choose another slot.');
     }
-    if ((user.tokenCents || 0) < q.tokenCents) {
-      throw new HttpError(402, `You need ${q.tokenCents / 100} tokens for this booking but have ${Math.floor((user.tokenCents || 0) / 100)}. Please buy more tokens.`);
-    }
 
-    t.set(CALENDAR_LOCK, { updatedAt: nowIso() });
-    t.create(bookingRefDoc, {
-      ref,
-      userId: user.id,
-      userName: user.fullName,
-      userEmail: user.email,
-      userPhone: user.phone,
-      startAt,
-      endAt,
-      days,
-      priceBasis: q.priceBasis,
-      fxRate: q.fxRate,
-      gstRateBp: q.gstRateBp,
-      bookedFromKm: area.distanceKm,
-      listSubtotalCents: q.listSubtotalCents,
-      discountCents: q.discountCents,
-      subtotalCents: q.subtotalCents,
-      gstCents: q.gstCents,
-      totalCents: q.totalCents,
-      tokenCents: q.tokenCents,
-      status: 'confirmed',
-      insurer: user.insurer,
-      policyNumber: user.policyNumber,
-      disclaimerAcceptedAt: nowIso(),
-      customerNote: note || null,
-      refundedTokenCents: 0,
-      createdAt: nowIso(),
-    });
-    t.update(userRef, { tokenCents: FieldValue.increment(-q.tokenCents) });
-    t.create(col.tokenTransactions.doc(), {
-      userId: user.id,
-      deltaCents: -q.tokenCents,
-      kind: 'booking',
-      bookingId: bookingRefDoc.id,
-      note: `Booking ${ref}`,
-      createdAt: nowIso(),
-    });
+    docPayload.insurer = user.insurer;
+    docPayload.policyNumber = user.policyNumber;
+
+    t.set(CALENDAR_LOCK, { updatedAt: createdAt });
+    t.create(bookingRefDoc, docPayload);
+    if (!isStripe) {
+      t.create(col.payments.doc(), {
+        bookingId: bookingRefDoc.id,
+        bookingRef: ref,
+        userId: user.id,
+        kind: 'payment',
+        amountCents: q.totalCents,
+        subtotalCents: q.subtotalCents,
+        gstCents: q.gstCents,
+        currency: 'AUD',
+        provider: 'demo',
+        note: `Booking ${ref} (demo mode - no money taken)`,
+        createdAt,
+      });
+    }
   });
 
+  if (isStripe) {
+    let session;
+    try {
+      session = await createBookingCheckout(req.user, { id: bookingRefDoc.id, ...docPayload }, settings.pickup_label);
+    } catch (err) {
+      await expirePendingBooking(bookingRefDoc.id).catch(() => {});
+      throw err;
+    }
+    await bookingRefDoc.update({ stripeSessionId: session.id });
+    audit(req.user.id, 'booking.checkout', `${ref} ${date} ${time} x${days} ${session.id}`, req.ip);
+    return res.status(201).json({ booking: bookingView({ id: bookingRefDoc.id, ...docPayload }), checkoutUrl: session.url });
+  }
+
   audit(req.user.id, 'booking.create', `${ref} ${date} ${time} x${days}`, req.ip);
-  const snap = await bookingRefDoc.get();
-  res.status(201).json({ booking: bookingView({ id: snap.id, ...snap.data() }) });
+  res.status(201).json({ booking: bookingView({ id: bookingRefDoc.id, ...docPayload }), demo: true });
+});
+
+router.get('/bookings/confirm', requireUser, async (req, res) => {
+  if (paymentsMode !== 'stripe') throw new HttpError(400, 'Stripe is not configured.');
+  const result = await confirmBookingCheckout(String(req.query.session_id || ''), req.user.id);
+  res.json({ paid: result.paid, booking: result.booking ? bookingView(result.booking) : null });
+});
+
+router.post('/bookings/:id/abandon', requireUser, async (req, res) => {
+  await expirePendingBooking(String(req.params.id), req.user.id);
+  res.json({ ok: true });
 });
 
 router.get('/bookings', requireUser, async (req, res) => {
   const rows = allDocs(await col.bookings.where('userId', '==', req.user.id).get())
+    .filter((b) => b.status !== 'expired')
     .sort((a, b) => b.startAt - a.startAt);
   res.json({ bookings: rows.map(bookingView) });
 });
 
-/** Cancels a confirmed booking and optionally refunds tokens (in token cents). */
-export async function cancelBooking(bookingId, { refundTokenCents, byUserId, ip, reason, ownerId = null }) {
+/** Cancels a confirmed booking and optionally refunds the AUD payment. */
+export async function cancelBooking(bookingId, { refundAudCents, byUserId, ip, reason, ownerId = null }) {
   const bookingDoc = col.bookings.doc(bookingId);
   const booking = await firestore.runTransaction(async (t) => {
     const snap = await t.get(bookingDoc);
     if (!snap.exists || (ownerId && snap.data().userId !== ownerId)) throw new HttpError(404, 'Booking not found.');
     const b = snap.data();
     if (b.status !== 'confirmed') throw new HttpError(409, 'Only upcoming bookings can be cancelled.');
-    const refund = typeof refundTokenCents === 'function' ? refundTokenCents(b) : refundTokenCents;
+    const refund = typeof refundAudCents === 'function' ? refundAudCents(b) : refundAudCents;
+    const needsStripeRefund = refund > 0 && b.paymentProvider === 'stripe' && Boolean(b.stripePaymentIntentId) && Boolean(config.stripeSecretKey);
+    const ts = nowIso();
     t.update(bookingDoc, {
       status: 'cancelled',
-      cancelledAt: nowIso(),
-      refundedTokenCents: refund,
+      cancelledAt: ts,
+      refundedAudCents: refund,
+      paymentStatus: refund > 0 ? (needsStripeRefund ? 'refund_pending' : 'refunded') : (b.paymentStatus || 'paid'),
       ...(reason ? { adminNote: reason } : {}),
     });
-    t.set(CALENDAR_LOCK, { updatedAt: nowIso() });
-    if (refund > 0) {
-      t.update(col.users.doc(b.userId), { tokenCents: FieldValue.increment(refund) });
-      t.create(col.tokenTransactions.doc(), {
-        userId: b.userId, deltaCents: refund, kind: 'refund', bookingId, note: `Cancelled ${b.ref}`, createdAt: nowIso(),
+    t.set(CALENDAR_LOCK, { updatedAt: ts });
+    if (refund > 0 && !needsStripeRefund) {
+      t.create(col.payments.doc(), {
+        bookingId,
+        bookingRef: b.ref,
+        userId: b.userId,
+        kind: 'refund',
+        amountCents: -refund,
+        currency: 'AUD',
+        provider: b.paymentProvider || 'demo',
+        note: `Cancelled ${b.ref}`,
+        createdAt: ts,
       });
     }
-    return { ...b, refund };
+    return { ...b, refund, needsStripeRefund };
   });
-  audit(byUserId, 'booking.cancel', `${booking.ref} refund=${booking.refund}`, ip);
+
+  if (booking.needsStripeRefund) {
+    try {
+      const r = await refundStripePayment({
+        paymentIntentId: booking.stripePaymentIntentId,
+        amountCents: booking.refund,
+        bookingId,
+      });
+      const ts = nowIso();
+      await firestore.batch()
+        .update(bookingDoc, { paymentStatus: 'refunded', stripeRefundId: r.id })
+        .create(col.payments.doc(), {
+          bookingId,
+          bookingRef: booking.ref,
+          userId: booking.userId,
+          kind: 'refund',
+          amountCents: -booking.refund,
+          currency: 'AUD',
+          provider: 'stripe',
+          providerRef: r.id,
+          note: `Cancelled ${booking.ref} · Refund ${r.id}`,
+          createdAt: ts,
+        })
+        .commit();
+    } catch (err) {
+      await bookingDoc.update({ paymentStatus: 'refund_failed' }).catch(() => {});
+      audit(byUserId, 'booking.refund_failed', `${booking.ref} ${err.message}`, ip);
+      throw new HttpError(502, 'Booking was cancelled, but the automatic Stripe refund failed. Our team has been alerted.');
+    }
+  }
+
+  audit(byUserId, 'booking.cancel', `${booking.ref} refundAudCents=${booking.refund}`, ip);
   return booking;
 }
 
@@ -274,12 +358,25 @@ router.post('/bookings/:id/cancel', requireUser, async (req, res) => {
     ownerId: req.user.id,
     byUserId: req.user.id,
     ip: req.ip,
-    refundTokenCents: (b) => {
+    refundAudCents: (b) => {
       if (Date.now() > b.startAt - cutoffMs) {
         throw new HttpError(409, `Bookings can only be cancelled online more than ${settings.cancellation_hours} hours before pickup. Please message us.`);
       }
-      return b.tokenCents;
+      return b.paidAudCents ?? b.totalCents;
     },
   });
   res.json({ ok: true });
 });
+
+export async function purgeExpiredPendingBookings() {
+  const qs = await col.bookings.where('status', '==', 'pending_payment').limit(200).get();
+  if (qs.empty) return;
+  const now = Date.now();
+  const expired = qs.docs.filter((d) => (d.data().paymentExpiresAt || 0) < now);
+  if (!expired.length) return;
+  const ts = nowIso();
+  const batch = firestore.batch();
+  for (const d of expired) batch.update(d.ref, { status: 'expired', paymentStatus: 'expired', expiredAt: ts });
+  batch.set(CALENDAR_LOCK, { updatedAt: ts });
+  await batch.commit();
+}

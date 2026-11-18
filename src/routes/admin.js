@@ -1,13 +1,12 @@
 import { Router } from 'express';
 import {
-  firestore, col, allDocs, docData, nowIso, getSettings, setSettings, audit, FieldValue,
+  firestore, col, allDocs, docData, nowIso, getSettings, setSettings, audit,
 } from '../db.js';
 import { HttpError, requireAdmin, requireSuperadmin, hashPassword, destroyAllSessions } from '../security.js';
 import {
   str, int, validDate, brisbaneToday, brisbaneDate, brisbaneTime, addDays, quote, floorWhole, maxRentalDays, handoverRules,
   isHandoverDay, PATTERNS,
 } from '../util.js';
-import { currentRate, refreshLiveRate } from '../fx.js';
 import { publicUser, getUser, createUser } from './auth.js';
 import { cancelBooking } from './bookings.js';
 import { postMessage, readThread } from './account.js';
@@ -27,43 +26,31 @@ router.get('/admin/stats', async (req, res) => {
   const now = Date.now();
   const since = new Date(now - 30 * 86400000).toISOString();
   const customers = col.users.where('role', '==', 'supporter');
-  const [customerCount, pending, liveBookings, threads, purchases, tokens] = await Promise.all([
+  const [customerCount, pending, liveBookings, threads, paymentSnap] = await Promise.all([
     customers.where('disabled', '==', false).count().get(),
     customers.where('licenceStatus', '==', 'pending').count().get(),
     col.bookings.where('status', 'in', ['confirmed', 'active']).get(),
     col.threads.where('unreadForAdmin', '>', 0).get(),
-    col.tokenTransactions.where('createdAt', '>=', since).get(),
-    customers.select('tokenCents').get(),
+    col.payments.where('createdAt', '>=', since).get(),
   ]);
   const live = allDocs(liveBookings);
+  const revenueAudCents30d = allDocs(paymentSnap).reduce((n, p) => n + (p.amountCents || 0), 0);
   res.json({
     customers: customerCount.data().count,
     pendingLicences: pending.data().count,
     upcomingBookings: live.filter((b) => b.status === 'confirmed' && b.startAt > now).length,
     activeBookings: live.filter((b) => b.status === 'active').length,
     unreadMessages: threads.docs.reduce((n, d) => n + d.data().unreadForAdmin, 0),
-    revenueAudCents30d: allDocs(purchases)
-      .filter((t) => t.kind === 'purchase' && (t.provider === 'stripe' || t.provider === 'demo'))
-      .reduce((n, t) => n + (t.amountCents || 0), 0),
-    revenueUsdCents30d: allDocs(purchases)
-      .filter((t) => t.kind === 'purchase' && t.provider === 'stripe')
-      .reduce((n, t) => n + (t.amountCents || 0), 0),
-    tokenCentsOutstanding: tokens.docs.reduce((n, d) => n + (d.data().tokenCents || 0), 0),
+    revenueAudCents30d,
   });
 });
 
-/* ---------- Settings: pricing, currency conversion and site options (superadmin) ---------- */
+/* ---------- Settings: AUD pricing and site options (superadmin) ---------- */
 
 const wholeCents = (cents) => floorWhole(cents / 100) * 100;
 
 const SETTING_RULES = {
   business_name: (v) => str(v, { field: 'Business name', max: 80 }),
-  price_basis: (v) => {
-    if (!['aud', 'tokens'].includes(v)) throw new HttpError(400, 'Price basis must be AUD or tokens.');
-    return v;
-  },
-  token_price_aud: (v) => int(v, { field: 'Token price (AUD)', min: 1, max: 1000 }),
-  // Prices are whole dollars and whole tokens.
   // Total price for a 1, 2, 3... day hire, whole AUD ex GST (comma-separated). Longer hires can't cost less.
   price_table: (v) => {
     const prices = String(v).split(',').map((s) => Math.floor(Number(s.trim())));
@@ -73,14 +60,6 @@ const SETTING_RULES = {
     if (prices.some((n, i) => i > 0 && n < prices[i - 1])) throw new HttpError(400, "A longer hire can't cost less than a shorter one.");
     return prices.join(',');
   },
-  // Customizable token amounts for each hire length (1..7 days).
-  token_table: (v) => {
-    const tokens = String(v).split(',').map((s) => Math.floor(Number(s.trim())));
-    if (tokens.length < 1 || tokens.length > 30 || tokens.some((n) => !(n >= 1 && n <= 1000000))) {
-      throw new HttpError(400, 'Enter a whole token amount of at least 1 token for every hire length.');
-    }
-    return tokens.join(',');
-  },
   discount_table: (v) => {
     const discounts = String(v).split(',').map((s) => Number(s.trim()));
     if (discounts.length < 1 || discounts.length > 30 || discounts.some((n) => !Number.isFinite(n) || n < 0 || n > 99)) {
@@ -88,26 +67,7 @@ const SETTING_RULES = {
     }
     return discounts.map((n) => Math.round(n * 100) / 100).join(',');
   },
-  token_share_fee: (v) => int(v, { field: 'Token share fee', min: 0, max: 1000 }),
-  daily_rate_token_cents: (v) => wholeCents(int(v, { field: 'Daily rate (tokens)', min: 100, max: 10000000 })),
   gst_rate_bp: (v) => int(v, { field: 'GST rate', min: 0, max: 5000 }),
-  fx_mode: (v) => {
-    if (!['live', 'manual'].includes(v)) throw new HttpError(400, 'Exchange rate mode must be live or manual.');
-    return v;
-  },
-  fx_manual_rate: (v) => {
-    const n = Number(v);
-    if (!(n >= 0.2 && n <= 5)) throw new HttpError(400, 'Manual exchange rate must be between 0.2 and 5.');
-    const usdPerAud = n > 1.05 ? 1 / n : n;
-    return usdPerAud.toFixed(4);
-  },
-  token_packs: (v) => {
-    const packs = String(v).split(',').map((s) => Number(s.trim()));
-    if (!packs.length || packs.some((n) => !Number.isInteger(n) || n < 1 || n > 5000)) {
-      throw new HttpError(400, 'Token packs must be comma-separated whole numbers between 1 and 5000.');
-    }
-    return packs.join(',');
-  },
   min_driver_age: (v) => int(v, { field: 'Minimum driver age', min: 16, max: 99 }),
   registration_radius_km: (v) => int(v, { field: 'Booking radius', min: 1, max: 2000 }),
   pickup_label: (v) => str(v, { field: 'Pickup location', max: 160 }),
@@ -155,9 +115,8 @@ function cleanSettings(updates) {
 }
 
 function pricingView(settings) {
-  const fx = currentRate(settings);
-  const list = Array.from({ length: maxRentalDays(settings) }, (_, i) => quote(settings, i + 1, fx.rate));
-  return { settings, fx, dailyQuote: list[0], list };
+  const list = Array.from({ length: maxRentalDays(settings) }, (_, i) => quote(settings, i + 1));
+  return { settings, currency: 'AUD', dailyQuote: list[0], list };
 }
 
 router.get('/admin/settings', async (req, res) => res.json(pricingView(await getSettings())));
@@ -170,7 +129,6 @@ router.put('/admin/settings', requireSuperadmin, async (req, res) => {
   }
   await setSettings(clean);
   audit(req.user.id, 'settings.update', Object.entries(clean).map(([k, v]) => `${k}=${v}`).join(' '), req.ip);
-  if (clean.fx_mode === 'live') await refreshLiveRate();
   res.json(pricingView(await getSettings()));
 });
 
@@ -179,21 +137,17 @@ router.post('/admin/pricing/preview', requireSuperadmin, async (req, res) => {
   res.json(pricingView({ ...(await getSettings()), ...cleanSettings(req.body?.settings) }));
 });
 
-router.post('/admin/fx/refresh', requireSuperadmin, async (req, res) => {
-  if (!(await refreshLiveRate())) throw new HttpError(502, 'Could not reach the exchange rate feeds. The previous rate is still in use.');
-  const settings = await getSettings();
-  audit(req.user.id, 'fx.refresh', settings.fx_live_rate, req.ip);
-  res.json(pricingView(settings));
-});
-
 /* ---------- Bookings ---------- */
 
 router.get('/admin/bookings', async (req, res) => {
   const status = String(req.query.status || '');
-  const query = ['confirmed', 'active', 'completed', 'cancelled'].includes(status)
+  const query = ['confirmed', 'active', 'completed', 'cancelled', 'pending_payment'].includes(status)
     ? col.bookings.where('status', '==', status)
     : col.bookings.orderBy('startAt', 'desc').limit(500);
-  const rows = allDocs(await query.get()).sort((a, b) => b.startAt - a.startAt).slice(0, 500);
+  const rows = allDocs(await query.get())
+    .filter((b) => (status ? b.status === status : b.status !== 'expired'))
+    .sort((a, b) => b.startAt - a.startAt)
+    .slice(0, 500);
   res.json({ bookings: rows });
 });
 
@@ -204,7 +158,7 @@ router.post('/admin/bookings/:id/status', async (req, res) => {
 
   if (status === 'cancelled') {
     await cancelBooking(id, {
-      refundTokenCents: (b) => (req.body?.refund === true ? b.tokenCents : 0),
+      refundAudCents: (b) => (req.body?.refund === true ? (b.paidAudCents ?? b.totalCents) : 0),
       byUserId: req.user.id,
       ip: req.ip,
       reason: note,
@@ -338,14 +292,14 @@ router.get('/admin/users', async (req, res) => {
 router.get('/admin/users/:id', async (req, res) => {
   const u = await getUser(req.params.id);
   if (!u || u.role !== 'supporter') throw new HttpError(404, 'Customer not found.');
-  const [bookings, transactions] = await Promise.all([
+  const [bookings, payments] = await Promise.all([
     col.bookings.where('userId', '==', u.id).get(),
-    col.tokenTransactions.where('userId', '==', u.id).get(),
+    col.payments.where('userId', '==', u.id).get(),
   ]);
   res.json({
     user: customerView(u),
-    bookings: allDocs(bookings).sort((a, b) => b.startAt - a.startAt),
-    transactions: allDocs(transactions).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100),
+    bookings: allDocs(bookings).filter((b) => b.status !== 'expired').sort((a, b) => b.startAt - a.startAt),
+    payments: allDocs(payments).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100),
   });
 });
 
@@ -363,29 +317,6 @@ router.post('/admin/users/:id/licence', async (req, res) => {
     (status === 'verified' ? 'Verified by our team.' : status === 'rejected' ? 'Rejected by our team. Please message us.' : '');
   await col.users.doc(u.id).update({ licenceStatus: status, licenceNotes: notes, licenceMethod: 'manual', licenceCheckedAt: nowIso() });
   audit(req.user.id, 'licence.manual', `user ${u.id} -> ${status}`, req.ip);
-  res.json({ ok: true });
-});
-
-router.post('/admin/users/:id/tokens', async (req, res) => {
-  const id = String(req.params.id);
-  // Whole tokens only, e.g. 10 or -5.
-  const tokens = Number(req.body?.tokens);
-  if (!Number.isInteger(tokens) || tokens === 0 || Math.abs(tokens) > 100000) {
-    throw new HttpError(400, 'Enter a non-zero whole number of tokens, e.g. 10 or -5.');
-  }
-  const delta = tokens * 100;
-  const note = str(req.body?.note, { field: 'Reason', min: 3, max: 200 });
-  await firestore.runTransaction(async (t) => {
-    const ref = col.users.doc(id);
-    const snap = await t.get(ref);
-    if (!snap.exists || snap.data().role !== 'supporter') throw new HttpError(404, 'Customer not found.');
-    if ((snap.data().tokenCents || 0) + delta < 0) throw new HttpError(400, 'Balance cannot go below zero.');
-    t.update(ref, { tokenCents: FieldValue.increment(delta) });
-    t.create(col.tokenTransactions.doc(), {
-      userId: id, deltaCents: delta, kind: 'adjustment', provider: 'admin', note, createdBy: req.user.id, createdAt: nowIso(),
-    });
-  });
-  audit(req.user.id, 'tokens.adjust', `user ${id} ${tokens}: ${note}`, req.ip);
   res.json({ ok: true });
 });
 

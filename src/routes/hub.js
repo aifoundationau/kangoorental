@@ -1,7 +1,5 @@
 import { Router } from 'express';
 import { getSettings, num } from '../db.js';
-import { currentRate, usdMarketRates } from '../fx.js';
-import { currencyFor, pricingCurrencyFor } from '../currencies.js';
 import { reverseGeocode, searchPlaces, ipPlace } from '../geo.js';
 import { HttpError, rateLimit } from '../security.js';
 import { distanceKm } from '../util.js';
@@ -75,7 +73,7 @@ router.get('/hub', async (req, res) => {
     pickup: { label: settings.pickup_label, lat, lng },
     timezone: 'Australia/Brisbane',
     weather: await getWeather(lat, lng),
-    fx: currentRate(settings),
+    currency: 'AUD',
   });
 });
 
@@ -90,7 +88,7 @@ function point(lat, lng) {
 }
 
 /**
- * Local conditions for the visitor's place and the site's pricing currency.
+ * Local conditions for the visitor's place. All site pricing is strictly AUD only.
  *  - ?lat&lng&reverse=1  device location: also looks up the closest suburb
  *  - ?lat&lng&cc=AU      a place the visitor chose (the browser already has its name)
  *  - no query            approximate place from the visitor's IP, else the pickup depot
@@ -112,21 +110,15 @@ router.get('/locale', rateLimit({ windowMs: 60 * 1000, max: 40, message: 'Too ma
     countryCode = place.countryCode;
   }
 
-  const [weather, market] = await Promise.all([getWeather(where.lat, where.lng), usdMarketRates()]);
-  const fx = currentRate(settings);
-  const code = countryCode ? currencyFor(countryCode) : '';
-  // AUD uses the site's own rate so the panel matches the prices; other currencies use the market feed.
-  const perUsd = code === 'AUD' ? fx.audPerUsd : code === 'USD' ? 1 : market.rates?.[code] ?? null;
+  const weather = await getWeather(where.lat, where.lng);
 
   res.json({
     place,
     countryCode,
     timezone: weather?.timezone || null,
     weather: weather && { current: weather.current, today: weather.daily[0] },
-    currency: code ? { code, perUsd, date: code === 'AUD' ? fx.date : market.date } : null,
-    usdPerAud: fx.usdPerAud,
-    audPerUsd: fx.audPerUsd,
-    pricingCurrency: countryCode ? pricingCurrencyFor(countryCode) : null,
+    currency: { code: 'AUD', name: 'Australian Dollar' },
+    pricingCurrency: 'AUD',
     depot: { label: settings.pickup_label, km: Math.round(distanceKm(where.lat, where.lng, depot.lat, depot.lng)) },
   });
 });

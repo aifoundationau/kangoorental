@@ -1,14 +1,13 @@
 import { Router } from 'express';
-import { firestore, col, allDocs, nowIso, audit, FieldValue } from '../db.js';
+import { firestore, col, allDocs, nowIso, audit, FieldValue, getSettings, num } from '../db.js';
 import {
   HttpError, requireUser, rateLimit, verifyPassword, destroyAllSessions, destroySession, isStaff,
 } from '../security.js';
-import { paymentsMode, createCheckout, confirmCheckout, creditTokens } from '../payments.js';
-import { str, PATTERNS, AU_STATES, validDate, int, brisbaneToday } from '../util.js';
+import { str, PATTERNS, AU_STATES, validDate, ageOn, brisbaneToday } from '../util.js';
 import { licenceUpload, publicUser, readLicenceFields, runLicenceCheck, getUser } from './auth.js';
 
 export const router = Router();
-router.use(['/account', '/tokens', '/messages'], requireUser);
+router.use(['/account', '/messages'], requireUser);
 
 router.put('/account/profile', async (req, res) => {
   const b = req.body || {};
@@ -18,7 +17,14 @@ router.put('/account/profile', async (req, res) => {
   const state = str(b.state, { field: 'State', max: 3 }).toUpperCase();
   const postcode = str(b.postcode, { field: 'Postcode', pattern: PATTERNS.postcode, max: 4 });
   if (!AU_STATES.includes(state)) throw new HttpError(400, 'Please choose a valid Australian state.');
-  await col.users.doc(req.user.id).update({ phone, addressLine, suburb, state, postcode });
+  const updates = { phone, addressLine, suburb, state, postcode };
+  if (!req.user.dob && b.dob) {
+    const dob = validDate(b.dob, 'Date of birth');
+    const minAge = num(await getSettings(), 'min_driver_age');
+    if (ageOn(dob, brisbaneToday()) < minAge) throw new HttpError(400, `Drivers must be at least ${minAge} years old.`);
+    updates.dob = dob;
+  }
+  await col.users.doc(req.user.id).update(updates);
   audit(req.user.id, 'profile.update', null, req.ip);
   res.json({ user: publicUser(await getUser(req.user.id)) });
 });
@@ -50,14 +56,14 @@ router.post('/account/licence',
     res.json({ user: publicUser(await getUser(req.user.id)), licence: { status: result.status, notes: result.notes } });
   });
 
-router.get('/account/transactions', async (req, res) => {
-  const rows = allDocs(await col.tokenTransactions.where('userId', '==', req.user.id).get())
+router.get('/account/payments', async (req, res) => {
+  const rows = allDocs(await col.payments.where('userId', '==', req.user.id).get())
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 200)
-    .map(({ id, deltaCents, kind, amountCents, currency, provider, note, createdAt }) => ({
-      id, deltaCents, kind, amountCents, currency, provider, note, createdAt,
+    .map(({ id, bookingId, bookingRef, kind, amountCents, subtotalCents, gstCents, currency, provider, note, createdAt }) => ({
+      id, bookingId, bookingRef, kind, amountCents, subtotalCents, gstCents, currency: currency || 'AUD', provider, note, createdAt,
     }));
-  res.json({ transactions: rows });
+  res.json({ payments: rows });
 });
 
 router.post('/account/delete', async (req, res) => {
@@ -68,8 +74,9 @@ router.post('/account/delete', async (req, res) => {
   } else if (req.body?.confirm !== 'DELETE') {
     throw new HttpError(400, 'Type DELETE to confirm.');
   }
+  const now = Date.now();
   const live = allDocs(await col.bookings.where('userId', '==', user.id).get())
-    .filter((b) => b.status === 'confirmed' || b.status === 'active');
+    .filter((b) => b.status === 'confirmed' || b.status === 'active' || (b.status === 'pending_payment' && b.paymentExpiresAt > now));
   if (live.length) throw new HttpError(409, 'Please cancel or complete your current bookings before deleting your account.');
 
   // Booking and payment records are kept for tax law; personal details are removed.
@@ -91,31 +98,6 @@ router.post('/account/delete', async (req, res) => {
   await destroyAllSessions(user.id);
   await destroySession(req, res);
   res.json({ ok: true });
-});
-
-/* ---------- Tokens ---------- */
-
-router.post('/tokens/checkout', async (req, res) => {
-  if (req.user.role !== 'supporter') throw new HttpError(403, 'Only customers can buy tokens.');
-  const tokens = int(req.body?.tokens, { field: 'Tokens', min: 1, max: 5000 });
-  const days = req.body?.days ? int(req.body?.days, { field: 'Days', min: 1, max: 30 }) : null;
-
-  if (paymentsMode === 'stripe') {
-    const session = await createCheckout(req.user, tokens, { days });
-    audit(req.user.id, 'tokens.checkout', `${tokens} tokens ${session.id}`, req.ip);
-    return res.json({ url: session.url });
-  }
-  if (paymentsMode === 'demo') {
-    await creditTokens({ userId: req.user.id, tokens, provider: 'demo', amountCents: tokens * 100, currency: 'AUD', note: 'Demo purchase - no money taken' });
-    return res.json({ demo: true, user: publicUser(await getUser(req.user.id)) });
-  }
-  throw new HttpError(503, 'Online payments are not available right now. Please message us.');
-});
-
-router.get('/tokens/confirm', async (req, res) => {
-  if (paymentsMode !== 'stripe') throw new HttpError(400, 'Stripe is not configured.');
-  const result = await confirmCheckout(String(req.query.session_id || ''), req.user.id);
-  res.json({ ...result, user: publicUser(await getUser(req.user.id)) });
 });
 
 /* ---------- Messages ---------- */

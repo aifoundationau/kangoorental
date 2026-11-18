@@ -1,7 +1,7 @@
 # Kangoo Rental
 
-Renault Kangoo MAXI (1.5L Diesel Manual 6-Speed) van hire in Wishart, Brisbane. Customers register (Brisbane area only), get their driver licence checked,
-add their insurance, buy tokens and book the van by the day. Staff run everything from the admin panel.
+Renault Kangoo MAXI (1.5L Diesel Manual 6-Speed) van hire in Arundel, Gold Coast. Customers register, get their driver licence checked,
+add their insurance, and book the van by the day in Australian dollars (AUD). Staff run everything from the admin panel.
 
 Node.js + Express, Google Cloud Firestore (database `kangoorental`), Google Gemini for licence checks, Stripe for payments.
 
@@ -28,22 +28,19 @@ BASE=http://localhost:3000 ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run smoke
 
 ## How pricing works
 
-Rental prices are in **AUD**; tokens cost **US$1.00 each**. The superadmin chooses, under *Admin → Pricing & currency*:
+All prices, payments, refunds, and tax invoices are strictly in **Australian dollars (AUD)** with 10% Australian GST added:
 
-- **Fixed AUD price** (default A$90 ex GST): tokens = AUD ÷ rate. At US$1 = A$1.43: A$90 → 62.94 tokens, + GST → A$99.00 → **69.23 tokens**.
-- **Fixed token price** (e.g. 62 tokens): AUD = tokens × rate. US$62 × 1.43 = A$88.66, + GST = A$97.53 → **68.20 tokens**.
-- **Exchange rate:** live (ECB via Frankfurter, refreshed every 6 hours, ExchangeRate-API as backup) or a manual rate.
-
-GST is added on the AUD amount and the customer pays the GST-inclusive total in tokens. Each booking stores the rate
-and amounts it was charged at; price changes never affect confirmed bookings.
+- **Default 1-day rate:** `AUD$90` ex. GST + `AUD$9` GST = **`AUD$99` inc. GST** (customizable by the superadmin under *Admin → Pricing (AUD)*).
+- **Multi-day discounts:** days 2–7 default to a 5% discount from the 1-day ex-GST rate (`AUD$90, $171, $257, $342, $428, $513, $599` ex. GST; `AUD$99, $188.10, $282.70, $376.20, $470.80, $564.30, $658.90` inc. GST).
+- **Stripe Checkout:** charges in `aud` with `automatic_tax: { enabled: true }`, `tax_behavior: "exclusive"`, and official AUD Tax Invoices. Each booking stores the AUD amounts it was charged at; price changes never affect confirmed bookings.
 
 ## Roles
 
 | Role | Can do |
 |---|---|
-| Customer | Book, buy tokens, manage licence/insurance/profile, message staff |
-| Admin | Bookings, customers, licence review, token adjustments, messages, calendar blocks |
-| Superadmin | Everything above, plus pricing, currency, site settings and staff accounts |
+| Customer | Book & pay in AUD, manage licence/insurance/profile, cancel eligible bookings for AUD refund, message staff |
+| Admin | Bookings, customers, licence review, messages, calendar blocks |
+| Superadmin | Everything above, plus AUD pricing, site settings and staff accounts |
 
 `npm run create-admin -- <email> <password> [admin|superadmin]` creates staff or resets a staff password.
 

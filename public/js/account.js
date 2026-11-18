@@ -1,8 +1,7 @@
 import {
-  api, getMe, getConfig, formatAud, formatUsd, formatPrice, quotePrices, formatTokens, formatRate, formatDateTime, formatStamp,
+  api, getMe, getConfig, formatAud, formatDateTime, formatStamp,
   getDeviceLocation, toast, showError, setBusy, escapeHtml, withShrunkLicence,
 } from './common.js';
-import { pricingCurrency } from './prefs.js';
 
 const $ = (id) => document.getElementById(id);
 let me = null;
@@ -29,14 +28,16 @@ function showTab(name) {
     chatTimer = setInterval(loadChat, 15000);
   }
   if (name === 'bookings') loadBookings();
-  if (name === 'tokens') loadTransactions();
+  if (name === 'payments') loadPayments();
 }
 
 /* ---------- Rendering ---------- */
 
 function renderHeader() {
   $('acctName').textContent = `Hi, ${me.fullName.split(' ')[0]}`;
-  $('acctBalance').textContent = `${formatTokens(me.tokenCents)} tokens`;
+  const ins = me.insurer && me.indemnityConfirmed && me.policyExpiry >= cfg.today;
+  const ready = me.licenceStatus === 'verified' && Boolean(ins);
+  $('acctStatus').textContent = ready ? 'Ready to book' : 'Setup incomplete';
   const unread = $('tabUnread');
   unread.hidden = !me.unreadMessages;
   unread.textContent = me.unreadMessages || '';
@@ -45,7 +46,6 @@ function renderHeader() {
 function renderOverview() {
   const [cls, text] = LICENCE_TEXT[me.licenceStatus];
   const ins = me.insurer && me.indemnityConfirmed && me.policyExpiry >= cfg.today;
-  const day = cfg.dailyQuote.tokenCents;
   const radius = cfg.bookingRadiusKm;
   const where = !area ? `Bookings are open to people within ${radius} km of our depot. We check your location each time you book.`
     : area.inArea ? `You're ${area.distanceKm} km from our depot, inside our ${radius} km booking area.`
@@ -54,8 +54,7 @@ function renderOverview() {
     <li class="${!area ? 'wait' : area.inArea ? 'ok' : 'bad'}"><strong>Location:</strong> ${where}
       <button class="link-button" type="button" data-check-location>${area ? 'Check again' : 'Check my location'}</button></li>
     <li class="${cls}"><strong>Licence:</strong> ${text} <a href="#licence" data-goto="licence">View</a></li>
-    <li class="${ins ? 'ok' : 'bad'}"><strong>Insurance:</strong> ${ins ? `${escapeHtml(me.insurer)}, valid to ${escapeHtml(me.policyExpiry)}` : 'Add your insurance details'} <a href="#insurance" data-goto="insurance">${ins ? 'Edit' : 'Add'}</a></li>
-    <li class="${me.tokenCents >= day ? 'ok' : 'bad'}"><strong>Tokens:</strong> ${formatTokens(me.tokenCents)} (one day is ${formatTokens(day)}) <a href="#tokens" data-goto="tokens">Buy tokens</a></li>`;
+    <li class="${ins ? 'ok' : 'bad'}"><strong>Insurance:</strong> ${ins ? `${escapeHtml(me.insurer)}, valid to ${escapeHtml(me.policyExpiry)}` : 'Add your insurance details'} <a href="#insurance" data-goto="insurance">${ins ? 'Edit' : 'Add'}</a></li>`;
 }
 
 function renderLicence() {
@@ -90,8 +89,15 @@ function renderProfile() {
   $('profileFixed').innerHTML = `
     <div><dt>Name</dt><dd>${escapeHtml(me.fullName)}</dd></div>
     <div><dt>Email</dt><dd>${escapeHtml(me.email)}</dd></div>
-    <div><dt>Date of birth</dt><dd>${escapeHtml(me.dob)}</dd></div>
+    <div><dt>Date of birth</dt><dd>${escapeHtml(me.dob || '–')}</dd></div>
     <div><dt>Sign-in</dt><dd>${me.googleLinked ? 'Google' : ''}${me.googleLinked && me.hasPassword ? ' or ' : ''}${me.hasPassword ? 'Email and password' : ''}</dd></div>`;
+  const dobField = $('pDobField');
+  const dobInput = $('pDob');
+  if (dobField && dobInput) {
+    dobField.hidden = Boolean(me.dob);
+    dobInput.required = !me.dob;
+    if (me.dob) dobInput.value = '';
+  }
   // Google-only accounts have no password to change, and confirm deletion by typing DELETE instead.
   $('passwordSection').hidden = !me.hasPassword;
   if (!me.hasPassword) {
@@ -106,47 +112,20 @@ function renderProfile() {
   $('pPostcode').value = me.postcode || '';
 }
 
-function renderTokens() {
-  const isIntl = pricingCurrency() === 'USD';
-  const tokenPriceAud = cfg.tokenPriceAud || 1;
-  const usdPerAud = cfg.fx?.usdPerAud || (cfg.fx?.rate > 1.05 ? 1 / cfg.fx.rate : cfg.fx?.rate || 0.7);
-  $('tokRate').textContent = isIntl
-    ? `International currency conversion: AUD$1 = US$${formatRate(usdPerAud)}.`
-    : '';
-  const q = cfg.dailyQuote;
-  $('tokDay').textContent = isIntl
-    ? `${formatAud(q.subtotalCents)} (${formatUsd(q.usdSubtotalCents)}) = ${formatTokens(q.tokenCents)} tokens`
-    : `${formatAud(q.totalCents)} inc. GST = ${formatTokens(q.tokenCents)} tokens`;
-  $('packs').innerHTML = cfg.tokenPacks.map((n) => {
-    const days = Math.floor((n * 100) / q.tokenCents);
-    const baseAudCents = n * tokenPriceAud * 100;
-    const incGstAudCents = Math.ceil(n * tokenPriceAud * 1.1 - 1e-9) * 100;
-    const usdCents = Math.ceil(n * tokenPriceAud * usdPerAud - 1e-9) * 100;
-    const cost = isIntl ? `${formatAud(baseAudCents)} (≈ ${formatUsd(usdCents)})` : `${formatAud(incGstAudCents)} inc. GST`;
-    return `<button class="pack" type="button" data-tokens="${n}">
-      <strong>${n} tokens</strong><span>${cost}</span>
-      <small>${days >= 1 ? `about ${days} day${days > 1 ? 's' : ''} hire` : 'top-up'}</small></button>`;
-  }).join('');
-  const modes = {
-    stripe: 'Payments are processed securely by Stripe in AUD. Stripe Tax automatically applies 10% GST in Australia ($0 tax outside Australia) and generates an official Tax Invoice.',
-    demo: 'Demo mode: no payment is taken and tokens are added straight away.',
-    disabled: 'Online payments are not available right now. Please message us.',
-  };
-  $('payMode').textContent = modes[cfg.paymentsMode];
-  const suggested = Number(new URLSearchParams(location.search).get('buy'));
-  if (suggested > 0) $('customAmount').value = suggested;
-}
-
 function bookingCard(b, { compact = false } = {}) {
   const canCancel = b.status === 'confirmed' && Date.now() < b.startAt - cfg.cancellationHours * 3600000;
-  const statusLabel = { confirmed: 'Confirmed', active: 'In progress', completed: 'Completed', cancelled: 'Cancelled' }[b.status];
-  const isIntl = pricingCurrency() === 'USD';
-  const usdRate = b.fxRate > 1.05 ? 1 / b.fxRate : b.fxRate || 0.7;
-  const usdCents = Math.ceil((b.totalCents / 100) * usdRate - 1e-9) * 100;
+  const statusLabel = {
+    pending_payment: 'Awaiting payment',
+    confirmed: 'Confirmed',
+    active: 'In progress',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+  }[b.status] || b.status;
+  const pillCls = b.status === 'cancelled' ? 'bad' : b.status === 'pending_payment' ? 'wait' : b.status === 'completed' ? '' : 'ok';
   return `<article class="booking-card ${b.status}">
-    <header><strong>${escapeHtml(b.ref)}</strong><span class="status-pill ${b.status === 'cancelled' ? 'bad' : b.status === 'completed' ? '' : 'ok'}">${statusLabel}</span></header>
+    <header><strong>${escapeHtml(b.ref)}</strong><span class="status-pill ${pillCls}">${statusLabel}</span></header>
     <p><strong>Pickup:</strong> ${formatDateTime(b.startAt)}<br><strong>Return:</strong> ${formatDateTime(b.endAt)}</p>
-    ${compact ? '' : `<p class="hint">${b.days} day${b.days > 1 ? 's' : ''} &middot; ${formatAud(b.totalCents)}${isIntl ? ` (${formatUsd(usdCents)} at AUD$1 = US$${formatRate(usdRate)})` : ''} inc GST &middot; ${formatTokens(b.tokenCents)} tokens${b.refundedTokenCents ? ` &middot; ${formatTokens(b.refundedTokenCents)} tokens refunded` : ''}</p>`}
+    ${compact ? '' : `<p class="hint">${b.days} day${b.days > 1 ? 's' : ''} &middot; ${formatAud(b.totalCents)} inc. GST${b.refundedAudCents ? ` &middot; ${formatAud(b.refundedAudCents)} refunded` : ''}</p>`}
     ${canCancel && !compact ? `<button class="btn btn-small btn-ghost" data-cancel="${b.id}">Cancel booking</button>` : ''}
   </article>`;
 }
@@ -171,16 +150,23 @@ async function loadBookings() {
   $('nextBooking').innerHTML = next ? bookingCard(next, { compact: true }) : '<p class="hint">No upcoming bookings.</p>';
 }
 
-async function loadTransactions() {
-  const { transactions } = await api('/account/transactions');
-  const kinds = { purchase: 'Purchase', booking: 'Booking', refund: 'Refund', adjustment: 'Adjustment' };
-  $('txList').innerHTML = transactions.length ? `<table class="table">
-    <thead><tr><th>Date</th><th>Type</th><th>Detail</th><th class="num">Tokens</th></tr></thead>
-    <tbody>${transactions.map((t) => `<tr>
-      <td>${formatStamp(t.createdAt)}</td><td>${kinds[t.kind]}</td>
-      <td>${escapeHtml(t.note || (t.amountCents ? `${(t.currency || 'AUD') === 'AUD' ? formatAud(t.amountCents) : formatUsd(t.amountCents)} via ${t.provider}` : ''))}</td>
-      <td class="num ${t.deltaCents < 0 ? 'neg' : 'pos'}">${t.deltaCents > 0 ? '+' : ''}${formatTokens(t.deltaCents)}</td></tr>`).join('')}
-    </tbody></table>` : '<p class="hint">No token activity yet.</p>';
+async function loadPayments() {
+  const modes = {
+    stripe: 'Payments are processed securely by Stripe in Australian dollars (AUD) with 10% GST and an official Tax Invoice.',
+    demo: 'Demo mode: bookings are confirmed straight away in AUD without charging a card.',
+    disabled: 'Online payments are not available right now. Please message us.',
+  };
+  $('payMode').textContent = modes[cfg.paymentsMode];
+
+  const { payments } = await api('/account/payments');
+  const kinds = { payment: 'Booking payment', refund: 'Refund' };
+  $('txList').innerHTML = payments.length ? `<table class="table">
+    <thead><tr><th>Date</th><th>Type</th><th>Detail</th><th class="num">Amount (AUD)</th></tr></thead>
+    <tbody>${payments.map((p) => `<tr>
+      <td>${formatStamp(p.createdAt)}</td><td>${kinds[p.kind] || escapeHtml(p.kind)}</td>
+      <td>${escapeHtml(p.note || (p.bookingRef ? `Booking ${p.bookingRef} via ${p.provider}` : p.provider))}</td>
+      <td class="num ${p.amountCents < 0 ? 'neg' : 'pos'}">${p.amountCents > 0 ? '+' : ''}${formatAud(p.amountCents)}</td></tr>`).join('')}
+    </tbody></table>` : '<p class="hint">No AUD payments or refunds yet.</p>';
 }
 
 async function loadChat() {
@@ -200,47 +186,36 @@ async function loadChat() {
 
 /* ---------- Actions ---------- */
 
-async function buyTokens(tokens, button) {
-  setBusy(button, true, 'Starting payment…');
-  try {
-    const r = await api('/tokens/checkout', { method: 'POST', body: { tokens } });
-    if (r.url) {
-      window.location.href = r.url;
-      return;
-    }
-    toast(`${tokens} tokens added (demo mode).`, 'success');
-    await refreshMe();
-    loadTransactions();
-  } catch (err) {
-    toast(err.message, 'error');
-  } finally {
-    setBusy(button, false);
-  }
-}
-
 async function handleReturnParams() {
   const params = new URLSearchParams(location.search);
   const flash = $('flash');
   const say = (msg, kind = 'info') => { flash.textContent = msg; flash.dataset.kind = kind; flash.hidden = false; };
 
-  if (params.get('purchase') === 'success' && params.get('session_id')) {
+  if (params.get('booking_paid') === '1' && params.get('session_id')) {
     try {
-      const r = await api(`/tokens/confirm?session_id=${encodeURIComponent(params.get('session_id'))}`);
-      say(r.paid ? 'Payment received. Your tokens have been added.' : 'Your payment is still processing. Tokens will appear shortly.', 'success');
+      const r = await api(`/bookings/confirm?session_id=${encodeURIComponent(params.get('session_id'))}`);
+      say(r.paid
+        ? `Payment received (${formatAud(r.booking?.paidAudCents ?? r.booking?.totalCents)} inc. GST). Booking ${r.booking?.ref || ''} is confirmed!`
+        : 'Your payment is still processing. Your booking will appear as confirmed shortly.', 'success');
       await refreshMe();
     } catch (err) {
       say(err.message, 'error');
     }
-  } else if (params.get('purchase') === 'cancelled') {
-    say('Payment cancelled. No money was taken.');
+  } else if (params.get('booking_cancelled') === '1') {
+    const bid = params.get('booking_id');
+    if (bid) await api(`/bookings/${encodeURIComponent(bid)}/abandon`, { method: 'POST' }).catch(() => {});
+    say('Checkout cancelled. No money was taken and the calendar slot has been released.');
   } else if (params.get('booked')) {
     say(`Booking ${params.get('booked')} is confirmed. See you at pickup!`, 'success');
   } else if (params.get('welcome')) {
     const lic = JSON.parse(sessionStorage.getItem('kangoo.licenceResult') || 'null');
     sessionStorage.removeItem('kangoo.licenceResult');
-    say(`Welcome to Kangoo Rental! ${lic?.notes || ''}`, lic?.status === 'rejected' ? 'error' : 'success');
+    const msg = lic
+      ? `Welcome to Kangoo Rental! ${lic.notes || ''}`
+      : 'Welcome to Kangoo Rental! Your supporter account is ready. Complete your details, licence, and insurance to book.';
+    say(msg, lic?.status === 'rejected' ? 'error' : 'success');
   }
-  if (params.has('purchase') || params.has('booked') || params.has('welcome')) {
+  if (params.has('booking_paid') || params.has('booking_cancelled') || params.has('booked') || params.has('welcome') || params.has('session_id') || params.has('booking_id')) {
     history.replaceState(null, '', `${location.pathname}${location.hash}`);
   }
 }
@@ -258,23 +233,15 @@ function bindForms() {
     }
   });
 
-  $('packs').addEventListener('click', (e) => {
-    const pack = e.target.closest('.pack');
-    if (pack) buyTokens(Number(pack.dataset.tokens), pack);
-  });
-  $('customTokens').addEventListener('submit', (e) => {
-    e.preventDefault();
-    buyTokens(Number($('customAmount').value), e.submitter);
-  });
-
   $('bookingList').addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-cancel]');
-    if (!btn || !confirm('Cancel this booking? Your tokens will be refunded.')) return;
+    if (!btn || !confirm('Cancel this booking? Your AUD payment will be refunded.')) return;
     try {
       await api(`/bookings/${btn.dataset.cancel}/cancel`, { method: 'POST' });
-      toast('Booking cancelled and tokens refunded.', 'success');
+      toast('Booking cancelled and AUD payment refunded.', 'success');
       await refreshMe();
       loadBookings();
+      if ($('txList').innerHTML.trim()) loadPayments();
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -359,9 +326,24 @@ function bindForms() {
     }
   });
 
+  $('delStartBtn').addEventListener('click', () => {
+    if (!$('deleteForm').reportValidity()) return;
+    $('delStartBtn').hidden = true;
+    $('delConfirmBox').hidden = false;
+    $('delConfirmBtn').focus();
+  });
+
+  $('delCancelBtn').addEventListener('click', () => {
+    $('delConfirmBox').hidden = true;
+    $('delStartBtn').hidden = false;
+  });
+
   $('deleteForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!confirm('Delete your account permanently? This cannot be undone.')) return;
+    if ($('delConfirmBox').hidden) {
+      $('delStartBtn').click();
+      return;
+    }
     try {
       const value = $('delPw').value;
       await api('/account/delete', { method: 'POST', body: me.hasPassword ? { password: value } : { confirm: value.trim().toUpperCase() } });
@@ -389,7 +371,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     renderOverview();
   });
-  renderTokens();
   await handleReturnParams();
   await refreshMe();
   loadBookings();
@@ -399,11 +380,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
   showTab(tabFromHash());
   window.addEventListener('hashchange', () => showTab(tabFromHash()));
-  // Redraw prices and dates when the visitor changes settings in the location panel.
   window.addEventListener('kangoo:prefs', () => {
-    renderTokens();
     loadBookings();
-    if ($('txList').innerHTML.trim()) loadTransactions();
+    if ($('txList').innerHTML.trim()) loadPayments();
     if ($('chat').dataset.loaded === '1') loadChat();
   });
 });

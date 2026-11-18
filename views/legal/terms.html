@@ -2,7 +2,7 @@
       <div class="container legal">
         <p class="eyebrow">The fine print</p>
         <h1>Terms of Service</h1>
-        <p class="updated">Last updated 31 October 2026</p>
+        <p class="updated">Last updated 19 November 2026</p>
 
         <p>These terms apply when you use the {{business_name}} website and hire our van. {{business_name}} is operated by AI Foundation.
           By creating an account or making a booking you agree to these terms, our <a href="/rental-disclaimer">rental disclaimer</a> and our
@@ -16,58 +16,46 @@
             details are false, a licence can't be verified, or we reasonably suspect misuse.</li>
         </ul>
 
-        <h2>2. Tokens</h2>
+        <h2>2. Prices, AUD payments and GST</h2>
         <ul>
-          <li>You pay for hire using prepaid tokens. <strong>The default token price is 1 token for {{token_price_aud}}</strong>, and the token amount for each product and service is shown on the website.
-            <strong>All invoices are in Australian dollars (AUD$)</strong> and are charged in Australian dollars by our payment provider, Stripe.</li>
-          <li>Tokens are credit for our products and services. They don't expire while your account is open.</li>
-          <li>You can share tokens with other account holders for a fee of {{token_share_fee}} token. If your account holds more than 100 tokens, we can pay them out
-            in Australian dollars with 72 hours' notice; you pay any international transfer fees. Our <a href="/token-policy">Token Policy</a> has the details.</li>
+          <li><strong>All prices and invoices are strictly in Australian dollars (AUD$).</strong> We do not convert prices to or accept foreign currencies.</li>
+          <li>Prices are displayed in Australian dollars inclusive of {{gst_percent}}% Australian GST (<strong>AUD$ inc. GST</strong>). Multi-day hires are discounted from the ex-GST 1-day base rate before adding {{gst_percent}}% GST.</li>
+          <li>At checkout, Stripe collects payment strictly in <strong>AUD$</strong>, applies Australian GST natively via Stripe Tax (<code>tax_behavior: "exclusive"</code>), and issues an official Tax Invoice in Australian dollars.</li>
+          <li>We may change prices at any time. Price changes never affect bookings already confirmed.</li>
         </ul>
 
-        <h2>3. Prices, currency conversion and GST</h2>
+        <h2>3. Bookings, pickup and return</h2>
         <ul>
-          <li><strong>All invoices are in Australian dollars (AUD$).</strong> Our default currency is Australian dollars (<strong>AUD$</strong>).</li>
-          <li>Visitors in Australia see prices in Australian dollars (<strong>AUD$ inc. GST</strong>). Visitors in all other nations see a currency conversion showing <strong>AUD$1 converted to USD</strong> (<strong>US$</strong>) alongside our Australian dollar prices.</li>
-          <li>All product, service and booking dollar and token amounts are whole numbers, rounded up.</li>
-          <li>At checkout, Stripe Tax automatically detects the buyer's country and applies 10% GST if the buyer is in Australia ($0 tax outside Australia), issuing an official tax invoice in Australian dollars (<strong>AUD$</strong>).
-            <strong>The token amount shown when you confirm is the amount charged</strong>, regardless of later exchange-rate movements.</li>
-          <li>We may change prices and token amounts at any time. Changes don't affect bookings already confirmed.</li>
-        </ul>
-
-        <h2>4. Bookings, pickup and return</h2>
-        <ul>
-          <li>A booking is confirmed when the tokens are deducted and you receive a booking reference.</li>
+          <li>A booking is confirmed once payment in <strong>AUD$</strong> is completed and you receive a booking reference.</li>
           <li>Pickups and returns are only on the days shown as available on the booking calendar.</li>
-          <li>Collect and return the van at our {{pickup_label}} depot at the times booked. Late returns may be charged as an additional
-            additional day and may affect the next customer.</li>
+          <li>Collect and return the van at our {{pickup_label}} depot at the times booked. Late returns may be charged as an additional day and may affect the next customer.</li>
           <li>Return the van in the condition you received it, allowing for fair wear and tear. The vehicle strictly operates on <strong>Diesel fuel</strong> only.</li>
         </ul>
 
-        <h2>5. Cancellations and refunds</h2>
+        <h2>4. Cancellations and refunds</h2>
         <ul>
-          <li>Cancel online more than {{cancellation_hours}} hours before pickup and all tokens for that booking are returned to your balance.</li>
+          <li>Cancel online more than {{cancellation_hours}} hours before pickup for a full refund in <strong>AUD$</strong> to your original payment method.</li>
           <li>For later cancellations, message us. Refunds are at our discretion, except where the Australian Consumer Law requires a remedy.</li>
-          <li>If we have to cancel (for example, because the van is unavailable), we'll return all tokens for that booking.</li>
+          <li>If we have to cancel (for example, because the van is unavailable), we'll refund your full AUD payment.</li>
         </ul>
 
-        <h2>6. Insurance and responsibility</h2>
+        <h2>5. Insurance and responsibility</h2>
         <p>You must hold your own insurance, including indemnity (public liability) cover of at least {{indemnity}}, for the whole rental.
           You're responsible for the van, its load, damage, fines, tolls and third-party claims while it's in your care. The full requirements are in the
           <a href="/rental-disclaimer">rental disclaimer</a>.</p>
 
-        <h2>7. Use of the website</h2>
+        <h2>6. Use of the website</h2>
         <ul>
           <li>Keep your password secure. You're responsible for activity on your account.</li>
           <li>Don't misuse the website, attempt to access other people's data, or interfere with its security.</li>
         </ul>
 
-        <h2>8. Liability</h2>
+        <h2>7. Liability</h2>
         <p>Our goods and services come with guarantees that cannot be excluded under the Australian Consumer Law. Subject to those
           guarantees, and to the extent permitted by law, our liability for any claim is limited to supplying the service again or refunding
-          the tokens paid for the booking concerned. We are not liable for indirect or consequential loss.</p>
+          the AUD amount paid for the booking concerned. We are not liable for indirect or consequential loss.</p>
 
-        <h2>9. General</h2>
+        <h2>8. General</h2>
         <p>These terms are governed by the laws of Queensland, Australia. We may update these terms; the version at the time you book applies to that booking.
           Questions? Contact us {{contact_email}}.</p>
       </div>

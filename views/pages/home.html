@@ -3,9 +3,9 @@
         <div class="hero-copy">
           <p class="eyebrow">Van hire &middot; {{pickup_label}}</p>
           <h1>Hire a Renault Kangoo MAXI for the day.</h1>
-          <p class="lead">Long-wheelbase Maxi with extended cargo volume, economical 1.5L turbo diesel, and 6-speed manual transmission. Book online by the day and pick up from Wishart.</p>
+          <p class="lead">Long-wheelbase Maxi with extended cargo volume, economical 1.5L turbo diesel, and 6-speed manual transmission. Book online by the day and pick up from Arundel.</p>
           <div class="price-tag" id="heroPrice" aria-live="polite">
-            <span class="price-main">AUD$99</span><span class="price-sub">inc. GST per day &middot; 99 tokens</span>
+            <span class="price-main">AUD$99</span><span class="price-sub">inc. GST per day (AUD)</span>
           </div>
           <div class="hero-actions">
             <a class="btn" href="#book">Check availability</a>
@@ -22,7 +22,7 @@
       <div class="container">
         <div class="price-cards-head">
           <h2 id="saveTitle">Hire for longer and save</h2>
-          <p class="hint">Prices include GST for Australia. Choose a card to set your hire length.</p>
+          <p class="hint">All prices are in Australian dollars (AUD) and include 10% GST. Choose a card to set your hire length.</p>
         </div>
         <div class="price-cards" id="pxCards"></div>
       </div>
@@ -65,10 +65,11 @@
             <p id="bkReturn" hidden></p>
 
             <dl class="quote" id="quote">
-              <div id="qListRow" hidden><dt id="qListLabel">Rental</dt><dd id="qList">–</dd></div>
+              <div id="qListRow" hidden><dt id="qListLabel">Standard rate</dt><dd id="qList">–</dd></div>
               <div class="quote-discount" id="qDiscountRow" hidden><dt>Multi-day discount</dt><dd id="qDiscount">–</dd></div>
+              <div id="qSubtotalRow"><dt>Rental subtotal (ex. GST)</dt><dd id="qSubtotal">–</dd></div>
+              <div id="qGstRow"><dt>GST (10%)</dt><dd id="qGst">–</dd></div>
               <div class="quote-total"><dt id="qTotalLabel">Total (AUD inc. GST)</dt><dd id="qTotal">–</dd></div>
-              <div class="quote-tokens"><dt>Tokens to pay</dt><dd id="qTokens">–</dd></div>
             </dl>
             <p class="hint" id="qRate"></p>
 
@@ -125,7 +126,7 @@
           <li class="step card"><span class="step-num">1</span><h3>Register</h3><p>Create an account with your details. Anyone can register; bookings are for people within {{radius_km}} km of our depot.</p></li>
           <li class="step card"><span class="step-num">2</span><h3>Verify your licence</h3><p>Upload a photo of your licence. We check it, then delete the photo straight away.</p></li>
           <li class="step card"><span class="step-num">3</span><h3>Add your insurance</h3><p>Tell us your insurer and confirm your {{indemnity}} indemnity cover.</p></li>
-          <li class="step card"><span class="step-num">4</span><h3>Buy tokens and book</h3><p>Top up tokens, pick your time and you're set. Message us any time from your account.</p></li>
+          <li class="step card"><span class="step-num">4</span><h3>Pay in AUD and book</h3><p>Pick your dates, pay in Australian dollars (AUD) via Stripe, and you're set. Message us any time from your account.</p></li>
         </ol>
       </div>
     </section>
@@ -148,13 +149,13 @@
             <p class="hint" id="hubDistance" aria-live="polite"></p>
           </div>
           <div class="card hub-card">
-            <h3>Brisbane time</h3>
+            <h3>Gold Coast time</h3>
             <p class="clock" id="hubClock" aria-live="off">--:--</p>
             <p class="hint" id="hubDate"></p>
             <p class="hint">Queensland doesn't use daylight saving (AEST, UTC+10).</p>
-            <h3 class="mt">Exchange rate</h3>
-            <p class="big-figure" id="hubFx">AUD$1 = US$–</p>
-            <p class="hint" id="hubFxSource"></p>
+            <h3 class="mt">Currency &amp; GST</h3>
+            <p class="big-figure">AUD only</p>
+            <p class="hint">All prices and tax invoices are in Australian dollars (AUD), inclusive of 10% GST.</p>
           </div>
           <div class="card hub-card">
             <h3>Weather at the depot</h3>

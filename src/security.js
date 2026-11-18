@@ -5,6 +5,7 @@ import { config } from './config.js';
 
 const scrypt = promisify(crypto.scrypt);
 const SESSION_COOKIE = config.isProduction ? '__Host-kr_sid' : 'kr_sid';
+const OAUTH_COOKIE = config.isProduction ? '__Host-kr_goauth' : 'kr_goauth';
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -75,6 +76,32 @@ export async function destroyAllSessions(userId) {
   const batch = firestore.batch();
   qs.docs.forEach((d) => batch.delete(d.ref));
   await batch.commit();
+}
+
+export function setOAuthStateCookie(res, payload) {
+  const value = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const attrs = [
+    `${OAUTH_COOKIE}=${value}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=600',
+  ];
+  if (config.isProduction) attrs.push('Secure');
+  res.append('Set-Cookie', attrs.join('; '));
+}
+
+export function consumeOAuthStateCookie(req, res) {
+  const raw = parseCookies(req.headers.cookie)[OAUTH_COOKIE];
+  const clearAttrs = [`${OAUTH_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
+  if (config.isProduction) clearAttrs.push('Secure');
+  res.append('Set-Cookie', clearAttrs.join('; '));
+  if (!raw) return null;
+  try {
+    return JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
 }
 
 // Attaches req.user / req.csrf when a valid session cookie is present.

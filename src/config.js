@@ -46,8 +46,8 @@ export const config = {
   firestoreProject: env.FIRESTORE_PROJECT_ID || env.GOOGLE_CLOUD_PROJECT || '',
   firestoreDatabase: env.FIRESTORE_DATABASE_ID || 'kangoorental',
 
-  // Stripe (optional). Without a key, token purchases run in demo mode outside production.
-  stripeSecretKey: env.STRIPE_SECRET_KEY || '',
+  // Stripe (optional). Without a key, direct AUD booking payments run in demo mode outside production.
+  stripeSecretKey: env.STRIPE_PAYMENTS === 'off' ? '' : (env.STRIPE_SECRET_KEY || ''),
   stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || '',
   allowDemoPayments: env.ALLOW_DEMO_PAYMENTS
     ? env.ALLOW_DEMO_PAYMENTS === 'true'
@@ -58,9 +58,11 @@ export const config = {
   licenceAiEnabled: Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY) && env.LICENCE_AI !== 'off',
   licenceModel: env.LICENCE_MODEL || 'gemini-3.8-flash',
 
-  // "Sign in with Google" (Google Identity Services). The client ID is public; no secret is needed because the
-  // server verifies Google's signed ID token. Add each site origin to the client's Authorised JavaScript origins.
-  googleClientId: env.GOOGLE_OAUTH_CLIENT_ID ?? '614773274800-9pooin0jia9ij91qjlk7r6r6ne02mbhg.apps.googleusercontent.com',
+  // Google OAuth 2.0 (Authorization Code + PKCE, plus ID token verification).
+  // Credentials come strictly from environment variables (never hardcoded).
+  googleClientId: env.GOOGLE_OAUTH_CLIENT_ID || '',
+  googleClientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET || '',
+  googleOAuthEnabled: Boolean(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET),
 
   // Google accounts that are always superadmin when they sign in with Google (comma-separated). Defaults to the
   // Firebase project owner. Only Google sign-in counts: it proves the email, a password sign-up doesn't.
@@ -75,34 +77,19 @@ export const config = {
 };
 
 // Defaults written to the settings table on first run; all editable by the superadmin.
-// Money model: default currency is AUD and default token price is 1 token = AUD$1 (stored as hundredths, "token cents").
-// The token amount for each product and service is customizable by the superadmin in token_table.
-// Visitors outside Australia and New Zealand see an AUD$1 -> USD currency conversion.
+// AUD-only pricing; `price_table` holds whole AUD ex-GST per hire length, +10% GST added.
 export const DEFAULT_SETTINGS = {
   business_name: 'Kangoo Rental',
-  price_basis: 'aud',                // 'aud' = AUD base pricing with customizable token_table per product/service
-  token_price_aud: '1',              // Default: 1 token = AUD$1
-  daily_rate_token_cents: '9900',    // 99 tokens inc GST for 1 day (1 token = AUD$1 default)
   gst_rate_bp: '1000',               // 10% GST, in basis points
   // Price list: total whole AUD ex GST for a 1, 2, 3... day hire (superadmin edits it under Pricing).
   price_table: '90,171,257,342,428,513,599',
-  // Customizable token amounts for each hire length (1..7 days). Defaults to 1 token per AUD$1 inc GST.
-  token_table: '99,189,283,377,471,565,659',
   // Configured discount percentages for hire lengths 1..7 (day 1 is 0%, days 2..7 default to 5%).
   discount_table: '0,5,5,5,5,5,5',
-  token_share_fee: '1',              // Token fee to transfer/share tokens with another member
-  fx_mode: 'live',                   // 'live' = daily market rate, 'manual' = fx_manual_rate
-  fx_manual_rate: '0.7000',          // USD per AUD$1 (AUD$1 converted to USD for nations outside AU & NZ)
-  fx_live_rate: '',
-  fx_live_date: '',
-  fx_live_source: '',
-  fx_live_checked_at: '',
-  token_packs: '100,200,300,500',
   min_driver_age: '21',
   registration_radius_km: '50',
-  pickup_label: 'Wishart QLD 4122',
-  pickup_lat: '-27.5540',
-  pickup_lng: '153.1010',
+  pickup_label: 'Arundel QLD 4214',
+  pickup_lat: '-27.9377',
+  pickup_lng: '153.3630',
   cancellation_hours: '48',
   buffer_hours: '1',
   min_notice_hours: '4',

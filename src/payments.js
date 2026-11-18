@@ -1,23 +1,28 @@
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { firestore, col, FieldValue, nowIso, audit, getSettings } from './db.js';
-import { currentRate } from './fx.js';
+import { firestore, col, FieldValue, nowIso, audit } from './db.js';
 import { HttpError } from './security.js';
+import { formatAud } from './util.js';
 
-// Rentals and token packs are charged in AUD through Stripe Checkout with native Stripe Tax
+// All bookings are charged directly in AUD through Stripe Checkout with native Stripe Tax
 // (automatic_tax: { enabled: true }, tax_behavior: "exclusive", and invoice_creation: { enabled: true }).
-// Stripe Checkout automatically detects the buyer's country on the payment page, adding 10% GST on top
-// if the buyer is in Australia and $0 tax if outside Australia. Credits are idempotent on the Stripe session id.
+// Credits/confirmations are idempotent on the Stripe checkout session id.
 
 export const paymentsMode = config.stripeSecretKey ? 'stripe' : config.allowDemoPayments ? 'demo' : 'disabled';
 
-async function stripe(method, path, params) {
+// 31-minute checkout hold (Stripe requires expires_at >= now + 30 minutes).
+export const HOLD_MS = 31 * 60 * 1000;
+
+async function stripe(method, path, params, { idempotencyKey } = {}) {
+  const headers = {
+    Authorization: `Bearer ${config.stripeSecretKey}`,
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+
   const res = await fetch(`https://api.stripe.com/v1${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${config.stripeSecretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers,
     body: params ? new URLSearchParams(params).toString() : undefined,
   });
   const data = await res.json();
@@ -28,96 +33,145 @@ async function stripe(method, path, params) {
   return data;
 }
 
-export async function createCheckout(user, tokens, { days } = {}) {
-  const settings = await getSettings();
-  const tokenPriceAud = Number(settings.token_price_aud) || 1;
-
-  // Base price in AUD (always whole AUD dollars, rounded up; Stripe Tax adds 10% GST for AU, $0 outside AU)
-  const baseAud = Math.ceil(tokens * tokenPriceAud);
-  const unitAmountCents = baseAud * 100;
-
+export async function createBookingCheckout(user, booking, pickupLabel = 'Arundel QLD 4214') {
   return stripe('POST', '/checkout/sessions', {
     mode: 'payment',
+    currency: 'aud',
     customer_email: user.email,
-    client_reference_id: String(user.id),
+    client_reference_id: String(booking.id),
+    expires_at: String(Math.floor(booking.paymentExpiresAt / 1000)),
+    'metadata[booking_id]': String(booking.id),
+    'metadata[booking_ref]': String(booking.ref),
     'metadata[user_id]': String(user.id),
-    'metadata[tokens]': String(tokens),
-    'metadata[base_aud]': String(baseAud),
+    'metadata[days]': String(booking.days),
+    'metadata[subtotal_aud_cents]': String(booking.subtotalCents),
+    'metadata[gst_aud_cents]': String(booking.gstCents),
+    'metadata[total_aud_cents]': String(booking.totalCents),
 
-    // Automatic Stripe Tax (detects buyer country automatically on payment page)
+    // Automatic Stripe Tax (adds 10% GST in Australia on top of ex-GST unit_amount)
     'automatic_tax[enabled]': 'true',
 
     // Official Tax Invoices on one-time payments
     'invoice_creation[enabled]': 'true',
-    'invoice_creation[invoice_data][description]': 'Tax Invoice - Renault Kangoo MAXI Van Hire',
-    'invoice_creation[invoice_data][footer]': 'Kangoo Rental · Renault Kangoo MAXI Diesel 1.5 Manual 6-Speed · Wishart QLD 4122 · All invoices are in Australian dollars (AUD).',
+    'invoice_creation[invoice_data][description]': `Tax Invoice - Renault Kangoo MAXI Van Hire (${booking.ref})`,
+    'invoice_creation[invoice_data][footer]': `Kangoo Rental · Renault Kangoo MAXI Diesel 1.5 Manual 6-Speed · ${pickupLabel} · All prices and tax invoices are in Australian dollars (AUD).`,
 
-    // Single line item with exclusive tax behavior (Stripe adds 10% GST in Australia, $0 outside Australia)
+    // Single line item in AUD with exclusive tax behavior
     'line_items[0][quantity]': '1',
     'line_items[0][price_data][currency]': 'aud',
     'line_items[0][price_data][tax_behavior]': 'exclusive',
-    'line_items[0][price_data][unit_amount]': String(unitAmountCents),
-    'line_items[0][price_data][product_data][name]': days
-      ? `Renault Kangoo MAXI Van Hire - ${days} day${days > 1 ? 's' : ''}`
-      : `${tokens} Kangoo Rental Tokens`,
-    'line_items[0][price_data][product_data][description]': 'Renault Kangoo MAXI Diesel 1.5 Manual 6-Speed · Wishart QLD 4122 depot',
+    'line_items[0][price_data][unit_amount]': String(booking.subtotalCents),
+    'line_items[0][price_data][product_data][name]': `Renault Kangoo MAXI Van Hire - ${booking.days} day${booking.days > 1 ? 's' : ''} (${booking.ref})`,
+    'line_items[0][price_data][product_data][description]': `Renault Kangoo MAXI Diesel 1.5 Manual 6-Speed · ${pickupLabel} depot`,
 
-    success_url: `${config.baseUrl}/account?purchase=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${config.baseUrl}/account?purchase=cancelled`,
-  });
+    success_url: `${config.baseUrl}/account?booking_paid=1&session_id={CHECKOUT_SESSION_ID}#bookings`,
+    cancel_url: `${config.baseUrl}/account?booking_cancelled=1&booking_id=${encodeURIComponent(booking.id)}#bookings`,
+  }, { idempotencyKey: `booking_checkout_${booking.id}` });
 }
 
-export async function creditTokens({ userId, tokens, provider, providerRef, note, amountCents, currency }) {
-  // A provider reference becomes the ledger document id, so the same payment can only be credited once.
-  const txRef = providerRef ? col.tokenTransactions.doc(`${provider}_${providerRef}`) : col.tokenTransactions.doc();
-  const userRef = col.users.doc(userId);
-  const credited = await firestore.runTransaction(async (t) => {
-    const [existing, user] = await Promise.all([t.get(txRef), t.get(userRef)]);
-    if (existing.exists || !user.exists) return false;
-    t.create(txRef, {
-      userId,
-      deltaCents: tokens * 100,
-      kind: 'purchase',
-      amountCents: amountCents ?? tokens * 100,
-      currency: currency ?? 'AUD',
-      provider,
-      providerRef: providerRef ?? null,
-      note: note ?? null,
-      createdAt: nowIso(),
-    });
-    t.update(userRef, { tokenCents: FieldValue.increment(tokens * 100) });
-    return true;
-  });
-  if (credited) audit(userId, 'tokens.purchase', `${tokens} tokens via ${provider} (${currency || 'AUD'}${(amountCents || tokens * 100) / 100})`);
-  return credited;
-}
-
-async function creditFromSession(session) {
-  if (session.payment_status !== 'paid') return false;
-  const userId = String(session.metadata?.user_id || session.client_reference_id || '');
-  const tokens = Number(session.metadata?.tokens);
-  if (!userId || !Number.isInteger(tokens) || tokens <= 0) return false;
-  if (session.currency !== 'aud' && session.currency !== 'usd') {
-    console.error('[stripe] unexpected currency on', session.id, session.currency);
-    return false;
+export async function markBookingPaid(session) {
+  if (session.payment_status !== 'paid') return { confirmed: false, alreadyPaid: false, booking: null };
+  if (session.currency !== 'aud') {
+    console.error('[stripe] unexpected non-AUD currency on', session.id, session.currency);
+    return { confirmed: false, alreadyPaid: false, booking: null };
   }
-  return creditTokens({
-    userId,
-    tokens,
-    provider: 'stripe',
-    providerRef: session.id,
-    amountCents: session.amount_total,
-    currency: (session.currency || 'aud').toUpperCase(),
-    note: `Stripe invoice ${session.invoice || session.id}`,
+  const bookingId = String(session.metadata?.booking_id || session.client_reference_id || '');
+  if (!bookingId) return { confirmed: false, alreadyPaid: false, booking: null };
+
+  const payRef = col.payments.doc(`stripe_${session.id}`);
+  const bookingRef = col.bookings.doc(bookingId);
+
+  const result = await firestore.runTransaction(async (t) => {
+    const [existingPay, bookingSnap] = await Promise.all([t.get(payRef), t.get(bookingRef)]);
+    if (!bookingSnap.exists) return { confirmed: false, alreadyPaid: false, booking: null };
+    const b = { id: bookingSnap.id, ...bookingSnap.data() };
+    if (existingPay.exists || ['confirmed', 'active', 'completed'].includes(b.status)) {
+      return { confirmed: false, alreadyPaid: true, booking: b };
+    }
+
+    const paidAudCents = session.amount_total ?? b.totalCents;
+    const paidAt = nowIso();
+    t.update(bookingRef, {
+      status: 'confirmed',
+      paymentStatus: 'paid',
+      currency: 'AUD',
+      paidAudCents,
+      stripeSessionId: session.id,
+      stripePaymentIntentId: session.payment_intent || null,
+      stripeInvoiceId: session.invoice || null,
+      paidAt,
+      paymentExpiresAt: FieldValue.delete(),
+    });
+    t.create(payRef, {
+      bookingId: b.id,
+      bookingRef: b.ref,
+      userId: b.userId,
+      kind: 'payment',
+      amountCents: paidAudCents,
+      subtotalCents: b.subtotalCents,
+      gstCents: b.gstCents,
+      currency: 'AUD',
+      provider: 'stripe',
+      providerRef: session.id,
+      paymentIntentId: session.payment_intent || null,
+      invoiceId: session.invoice || null,
+      note: `Booking ${b.ref}${session.invoice ? ` · Invoice ${session.invoice}` : ''}`,
+      createdAt: paidAt,
+    });
+    t.set(col.locks.doc('calendar'), { updatedAt: paidAt });
+
+    return {
+      confirmed: true,
+      alreadyPaid: false,
+      booking: {
+        ...b,
+        status: 'confirmed',
+        paymentStatus: 'paid',
+        currency: 'AUD',
+        paidAudCents,
+        stripeSessionId: session.id,
+        stripePaymentIntentId: session.payment_intent || null,
+        stripeInvoiceId: session.invoice || null,
+        paidAt,
+      },
+    };
+  });
+
+  if (result.confirmed && result.booking) {
+    audit(result.booking.userId, 'booking.paid', `${result.booking.ref} ${formatAud(result.booking.paidAudCents)} via stripe (${session.id})`);
+  }
+  return result;
+}
+
+export async function expirePendingBooking(bookingId, ownerId = null) {
+  const ref = col.bookings.doc(String(bookingId));
+  await firestore.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    if (!snap.exists) return;
+    const b = snap.data();
+    if (b.status !== 'pending_payment') return;
+    if (ownerId && b.userId !== ownerId) throw new HttpError(403, 'This booking belongs to another account.');
+    t.update(ref, { status: 'expired', paymentStatus: 'expired', expiredAt: nowIso() });
+    t.set(col.locks.doc('calendar'), { updatedAt: nowIso() });
   });
 }
 
-export async function confirmCheckout(sessionId, userId) {
+export async function confirmBookingCheckout(sessionId, userId) {
   if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) throw new HttpError(400, 'Invalid payment reference.');
   const session = await stripe('GET', `/checkout/sessions/${sessionId}`);
-  if (session.client_reference_id !== userId) throw new HttpError(403, 'This payment belongs to another account.');
-  if (session.payment_status !== 'paid') return { credited: false, paid: false };
-  return { credited: await creditFromSession(session), paid: true };
+  const ownerId = session.metadata?.user_id;
+  if (ownerId && ownerId !== userId) throw new HttpError(403, 'This payment belongs to another account.');
+  if (session.payment_status !== 'paid') return { paid: false, booking: null };
+  const result = await markBookingPaid(session);
+  if (result.booking && result.booking.userId !== userId) throw new HttpError(403, 'This payment belongs to another account.');
+  return { paid: true, booking: result.booking };
+}
+
+export async function refundStripePayment({ paymentIntentId, amountCents, bookingId }) {
+  return stripe('POST', '/refunds', {
+    payment_intent: String(paymentIntentId),
+    amount: String(amountCents),
+  }, { idempotencyKey: `refund_${bookingId}` });
 }
 
 export async function handleWebhook(rawBody, signatureHeader) {
@@ -133,6 +187,9 @@ export async function handleWebhook(rawBody, signatureHeader) {
 
   const event = JSON.parse(rawBody.toString('utf8'));
   if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
-    await creditFromSession(event.data.object);
+    await markBookingPaid(event.data.object);
+  } else if (event.type === 'checkout.session.expired') {
+    const bid = event.data.object?.metadata?.booking_id || event.data.object?.client_reference_id;
+    if (bid) await expirePendingBooking(bid);
   }
 }

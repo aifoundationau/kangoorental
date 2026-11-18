@@ -6,8 +6,8 @@
             <h1>Admin panel</h1>
           </div>
           <div class="balance-chip">
-            <span>Exchange rate</span>
-            <strong id="hdrFx">–</strong>
+            <span>Currency</span>
+            <strong>AUD only</strong>
           </div>
         </div>
 
@@ -18,7 +18,7 @@
             <button role="tab" data-tab="customers">Customers</button>
             <button role="tab" data-tab="messages">Messages <span class="badge" id="tabUnread" hidden></span></button>
             <button role="tab" data-tab="handover" data-super>Block out dates</button>
-            <button role="tab" data-tab="pricing">Pricing &amp; currency</button>
+            <button role="tab" data-tab="pricing">Pricing (AUD)</button>
             <button role="tab" data-tab="settings" data-super>Settings</button>
             <button role="tab" data-tab="staff" data-super>Staff</button>
             <button role="tab" data-tab="audit">Audit log</button>
@@ -37,6 +37,7 @@
               <label for="bkFilter">Show</label>
               <select id="bkFilter">
                 <option value="">All bookings</option>
+                <option value="pending_payment">Awaiting payment</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="active">In progress</option>
                 <option value="completed">Completed</option>
@@ -102,67 +103,19 @@
             <div id="hoConflicts"></div>
           </div>
 
-          <!-- Pricing & currency -->
+          <!-- Pricing (AUD) -->
           <div class="tab-panel" data-panel="pricing" role="tabpanel" hidden>
-            <h2>Pricing, tokens &amp; currency conversion</h2>
+            <h2>Pricing (AUD only)</h2>
             <p class="hint" id="pricingReadonly" hidden>Only the superadmin can change pricing. You can view the current settings below.</p>
             <form id="pricingForm" class="stack">
               <fieldset>
-                <legend>Default currency &amp; token value</legend>
-                <p class="hint">The default currency is <strong>AUD$</strong> and the default token price is <strong>1 token = AUD$1</strong>. Stripe Tax automatically handles 10% GST for buyers in Australia ($0 tax outside Australia) and generates official AUD Tax Invoices.</p>
-                <input type="hidden" name="price_basis" value="aud">
-                <div class="field-row">
-                  <div class="field">
-                    <label for="pTokenPriceAud">1 token price (AUD$)</label>
-                    <input id="pTokenPriceAud" type="number" min="1" max="1000" step="1" required value="1" data-testid="p-token-price-aud" data-agent-id="p-token-price-aud">
-                  </div>
-                  <div class="field">
-                    <label for="pShareFee">Token share / transfer fee (tokens)</label>
-                    <input id="pShareFee" type="number" min="0" max="1000" step="1" required value="1" data-testid="p-share-fee" data-agent-id="p-share-fee">
-                  </div>
-                </div>
-              </fieldset>
-
-              <fieldset>
-                <legend>Products &amp; services — discount %, price &amp; customizable tokens</legend>
-                <p class="hint">Type the discount % for days 2&ndash;7 to automatically calculate the AUD$ price and tokens, or adjust them directly. By default, 1 token = AUD$1 (inc GST).</p>
+                <legend>Hire rates &amp; multi-day discounts (AUD ex-GST)</legend>
+                <p class="hint">Enter whole Australian dollar (AUD$) amounts exclusive of GST, or enter a discount % for days 2&ndash;7 to calculate the ex-GST price automatically. 10% Australian GST is added on top.</p>
                 <div class="price-list-edit" id="pList"></div>
-                <div class="btn-row mt-sm">
-                  <button class="btn btn-small btn-ghost" type="button" id="resetTokensBtn" data-super data-testid="reset-tokens-btn" data-agent-id="reset-tokens-btn">Reset all tiers to 1 token = AUD$1 (inc GST)</button>
-                </div>
-              </fieldset>
-
-              <fieldset>
-                <legend>International currency conversion (AUD$1 &rarr; USD)</legend>
-                <p class="hint">Shown to visitors in all nations except Australia and New Zealand. Visitors in Australia and New Zealand see AUD$ directly.</p>
-                <label class="radio"><input type="radio" name="fx_mode" value="live">
-                  <span><strong>Live market rate.</strong> Updated every 6 hours from the European Central Bank (via Frankfurter), with a backup feed.</span></label>
-                <label class="radio"><input type="radio" name="fx_mode" value="manual">
-                  <span><strong>Manual rate.</strong> Use the USD conversion rate for AUD$1 entered below.</span></label>
-                <div class="field-row">
-                  <div class="field">
-                    <label for="pManual">Manual conversion rate (USD per AUD$1)</label>
-                    <input id="pManual" type="number" min="0.2" max="5" step="0.0001" required>
-                  </div>
-                  <div class="field">
-                    <span class="label">Live conversion rate (AUD$1 &rarr; USD)</span>
-                    <p class="big-figure" id="liveRate">–</p>
-                    <p class="hint" id="liveRateInfo"></p>
-                    <button class="btn btn-small btn-ghost" type="button" id="fxRefresh">Refresh now</button>
-                  </div>
-                </div>
-              </fieldset>
-
-              <fieldset>
-                <legend>Token packs</legend>
-                <div class="field">
-                  <label for="pPacks">Packs shown to customers (comma-separated token amounts)</label>
-                  <input id="pPacks" required>
-                </div>
               </fieldset>
 
               <div class="calc card" aria-live="polite">
-                <h3>What a customer pays for 1 day</h3>
+                <h3>What a customer pays for 1 day (AUD)</h3>
                 <ol class="calc-steps" id="calcSteps"></ol>
               </div>
 

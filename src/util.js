@@ -63,74 +63,46 @@ export function priceTable(settings) {
   return table.length && table.every((n) => n > 0) ? table : [1];
 }
 
-/**
- * Customizable token amounts for each hire tier (1, 2, 3... days).
- * Defaults to 1 token = AUD$1 (inc GST) when not explicitly set for a tier.
- */
-export function tokenTable(settings) {
-  const prices = priceTable(settings);
-  const gstBp = num(settings, 'gst_rate_bp');
-  const raw = String(settings.token_table || '').split(',').map((s) => Number(s.trim()));
-  return prices.map((audExGst, i) => {
-    const defaultTokens = audExGst + ceilWhole((audExGst * gstBp) / 10000);
-    return Number.isInteger(raw[i]) && raw[i] >= 1 ? raw[i] : defaultTokens;
-  });
-}
-
 /** Longest hire: the admin setting, but never longer than the price list. */
 export const maxRentalDays = (settings) => Math.min(num(settings, 'max_rental_days'), priceTable(settings).length);
 
+/** Formats integer AUD cents cleanly (omits .00 when exact whole dollar, shows 2 decimals otherwise). */
+export function formatAud(cents) {
+  const neg = cents < 0;
+  const n = Math.abs(Number(cents || 0)) / 100;
+  const whole = Number.isInteger(n);
+  return `${neg ? '−' : ''}AUD$${n.toLocaleString('en-AU', { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 })}`;
+}
+
 /**
- * Prices a rental.
- * Default currency is AUD (`AUD$`), and default token price is 1 token = AUD$1.
- * The SuperAdmin can customize the token amount for each hire tier in `token_table`.
- * `fxRate` is the USD-per-AUD$1 conversion rate (e.g. 0.70, meaning AUD$1 = US$0.70) shown to visitors outside Australia and New Zealand.
- * Every dollar and token amount is a whole number, rounded up. Amounts are returned in cents to match stored records.
+ * Prices a rental in AUD only with exact ATO 10% GST matching Stripe Tax `exclusive` to the cent.
  * `days` must be between 1 and maxRentalDays(settings).
  */
-export function quote(settings, days, fxRate = 0.7) {
-  const basis = settings.price_basis === 'tokens' ? 'tokens' : 'aud';
+export function quote(settings, days) {
   const gstBp = num(settings, 'gst_rate_bp');
   const table = priceTable(settings);
-  const tokTable = tokenTable(settings);
-  const usdPerAud = fxRate > 1.05 ? Number((1 / fxRate).toFixed(4)) : Number((fxRate || 0.7).toFixed(4));
 
-  const listAud = table[0] * days;
-  const subtotalAud = table[days - 1];
-  const gstAud = ceilWhole((subtotalAud * gstBp) / 10000);
-  const totalAud = subtotalAud + gstAud;
+  const listSubtotalCents = table[0] * days * 100;
+  const subtotalCents = table[days - 1] * 100;
+  const discountCents = Math.max(0, listSubtotalCents - subtotalCents);
+  const gstCents = Math.round((subtotalCents * gstBp) / 10000);
+  const totalCents = subtotalCents + gstCents;
 
-  // Token amounts: customizable per tier in SuperAdmin (defaulting to 1 token = AUD$1 inc GST)
-  const day1Tokens = tokTable[0];
-  const totalTokens = tokTable[days - 1];
-  const listTokens = day1Tokens * days;
-  const subtotalTokens = ceilWhole((totalTokens * 10000) / (10000 + gstBp));
-
-  // USD conversion for visitors outside Australia & New Zealand (AUD$1 converted to USD)
-  const usdList = ceilWhole(listAud * usdPerAud);
-  const usdSubtotal = ceilWhole(subtotalAud * usdPerAud);
-  const usdGst = ceilWhole(gstAud * usdPerAud);
-  const usdTotal = ceilWhole(totalAud * usdPerAud);
+  const day1TotalCents = table[0] * 100 + Math.round((table[0] * 100 * gstBp) / 10000);
+  const listTotalCents = day1TotalCents * days;
+  const discountIncGstCents = Math.max(0, listTotalCents - totalCents);
 
   return {
     days,
-    priceBasis: basis,
-    fxRate: usdPerAud,
-    usdPerAud,
+    currency: 'AUD',
     gstRateBp: gstBp,
-    listSubtotalCents: listAud * 100,
-    discountCents: (listAud - subtotalAud) * 100,
-    subtotalCents: subtotalAud * 100,
-    gstCents: gstAud * 100,
-    totalCents: totalAud * 100,
-    listSubtotalTokenCents: listTokens * 100,
-    subtotalTokenCents: subtotalTokens * 100,
-    tokenCents: totalTokens * 100,
-    usdListSubtotalCents: usdList * 100,
-    usdDiscountCents: Math.max(0, usdList - usdSubtotal) * 100,
-    usdSubtotalCents: usdSubtotal * 100,
-    usdGstCents: usdGst * 100,
-    usdTotalCents: usdTotal * 100,
+    listSubtotalCents,
+    discountCents,
+    subtotalCents,
+    gstCents,
+    totalCents,
+    listTotalCents,
+    discountIncGstCents,
   };
 }
 

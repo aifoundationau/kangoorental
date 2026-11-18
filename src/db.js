@@ -10,7 +10,7 @@ import { config, DEFAULT_SETTINGS } from './config.js';
 //   sessions/{sha256(token)}         { userId, csrf, expiresAt }
 //   bookings/{id}                    rentals; times are epoch ms
 //   blocks/{id}                      dates the van is unavailable
-//   tokenTransactions/{id}           token ledger (Stripe purchases use id stripe_<checkout session id>)
+//   payments/{id}                    AUD payment and refund ledger; Stripe payments use id stripe_<checkout session id>
 //   threads/{userId}                 message thread summary; messages in threads/{userId}/messages
 //   auditLog/{id}                    security-relevant events
 //   locks/calendar                   touched by every booking change so overlapping bookings serialise
@@ -32,7 +32,7 @@ export const col = {
   sessions: firestore.collection('sessions'),
   bookings: firestore.collection('bookings'),
   blocks: firestore.collection('blocks'),
-  tokenTransactions: firestore.collection('tokenTransactions'),
+  payments: firestore.collection('payments'),
   threads: firestore.collection('threads'),
   auditLog: firestore.collection('auditLog'),
   locks: firestore.collection('locks'),

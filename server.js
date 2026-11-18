@@ -9,10 +9,9 @@ import {
   HttpError, loadSession, csrfGuard, securityHeaders, purgeExpiredSessions, hashPassword, isStaff,
 } from './src/security.js';
 import { handleWebhook, paymentsMode } from './src/payments.js';
-import { startFxUpdates, ensureFreshRate, currentRate } from './src/fx.js';
-import { quote, maxRentalDays } from './src/util.js';
+import { quote, maxRentalDays, formatAud } from './src/util.js';
 import { router as authRouter, createUser } from './src/routes/auth.js';
-import { router as bookingsRouter } from './src/routes/bookings.js';
+import { router as bookingsRouter, purgeExpiredPendingBookings } from './src/routes/bookings.js';
 import { router as accountRouter } from './src/routes/account.js';
 import { router as adminRouter } from './src/routes/admin.js';
 import { router as hubRouter } from './src/routes/hub.js';
@@ -29,7 +28,6 @@ app.use(express.static(path.join(ROOT, 'public'), { maxAge: config.isProduction 
 // Startup runs once per server instance, on the first request (serverless hosts have no boot step).
 app.use(async (req, res, next) => {
   await startup();
-  await ensureFreshRate();
   next();
 });
 
@@ -54,7 +52,7 @@ const readView = (name) => fs.readFileSync(new URL(`./views/${name}`, import.met
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const PAGES = {
-  '/': { view: 'pages/home.html', title: 'Renault Kangoo MAXI van hire in Wishart, Brisbane', script: 'home.js' },
+  '/': { view: 'pages/home.html', title: 'Renault Kangoo MAXI van hire in Arundel, Gold Coast', script: 'home.js' },
   '/login': { view: 'pages/login.html', title: 'Log in', script: 'login.js' },
   '/register': { view: 'pages/register.html', title: 'Create your account', script: 'register.js' },
   '/account': { view: 'pages/account.html', title: 'My account', script: 'account.js', auth: 'user' },
@@ -65,13 +63,11 @@ const PAGES = {
   '/terms': { view: 'legal/terms.html', title: 'Terms of Service' },
   '/ai-policy': { view: 'legal/ai-policy.html', title: 'AI Policy (ISO/IEC 42001)' },
   '/security-policy': { view: 'legal/security-policy.html', title: 'Security Policy (ISO/IEC 27001)' },
-  '/token-policy': { view: 'legal/token-policy.html', title: 'Token Policy' },
 };
 const NOT_FOUND = { view: 'pages/404.html', title: 'Page not found' };
 
 async function pageContext() {
   const s = await getSettings();
-  const rate = currentRate(s).rate;
   const days = maxRentalDays(s);
   return {
     business_name: s.business_name,
@@ -81,14 +77,12 @@ async function pageContext() {
     gst_percent: String(num(s, 'gst_rate_bp') / 100),
     cancellation_hours: s.cancellation_hours,
     indemnity: `AUD$${(num(s, 'required_indemnity_cents') / 100).toLocaleString('en-AU')}`,
-    token_price_aud: `AUD$${num(s, 'token_price_aud') || 1}`,
-    token_share_fee: String(num(s, 'token_share_fee') || 1),
     contact_email: s.contact_email ? `at ${s.contact_email}` : 'through the message centre in your account',
     contact_phone: s.contact_phone || '',
     session_days: String(config.sessionDays),
     max_days: String(days),
-    // "1 day AUD$99, 2 days AUD$189, ... and 7 days AUD$659" (inc. GST for Australia)
-    price_list: Array.from({ length: days }, (_, i) => `${i + 1} day${i ? 's' : ''} AUD$${Math.ceil(quote(s, i + 1, rate).totalCents / 100).toLocaleString('en-AU')}`)
+    // "1 day AUD$99, 2 days AUD$188.10, ... and 7 days AUD$658.90" (inc. GST)
+    price_list: Array.from({ length: days }, (_, i) => `${i + 1} day${i ? 's' : ''} ${formatAud(quote(s, i + 1).totalCents)}`)
       .join(', ').replace(/, ([^,]*)$/, ' and $1'),
   };
 }
@@ -148,7 +142,10 @@ async function ensureSuperadmin() {
   console.log('');
 }
 
-const housekeeping = () => purgeExpiredSessions().catch((err) => console.warn('[sessions] purge failed:', err.message));
+const housekeeping = () => Promise.all([
+  purgeExpiredSessions().catch((err) => console.warn('[sessions] purge failed:', err.message)),
+  purgeExpiredPendingBookings().catch((err) => console.warn('[bookings] purge failed:', err.message)),
+]);
 
 let ready = null;
 function startup() {
@@ -170,7 +167,6 @@ export default app;
 if (!config.onVercel) {
   await startup();
   setInterval(housekeeping, 3600 * 1000).unref();
-  startFxUpdates();
 
   // Express 5 passes listen errors (e.g. port in use) to this callback instead of throwing.
   app.listen(config.port, (err) => {
