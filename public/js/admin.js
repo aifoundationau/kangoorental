@@ -28,6 +28,7 @@ const loaders = {
   messages: loadThreads,
   handover: loadHandover,
   pricing: loadPricing,
+  ledger: loadLedger,
   settings: loadSettings,
   staff: loadStaff,
   audit: loadAudit,
@@ -56,6 +57,7 @@ async function loadDashboard() {
     tile('Unread messages', s.unreadMessages, 'messages'),
     tile('Customers', s.customers, 'customers'),
     tile('Net revenue (30 days)', formatAud(s.revenueAudCents30d), 'audit'),
+    tile('Distribution balance', s.settlement?.amountCents ? formatAud(s.settlement.amountCents) : 'Settled', 'ledger'),
   ].join('');
   const upcoming = bookings.filter((b) => b.startAt > Date.now()).sort((a, b) => a.startAt - b.startAt).slice(0, 8);
   $('upcoming').innerHTML = upcoming.length ? bookingTable(upcoming) : '<p class="hint">No upcoming pickups.</p>';
@@ -399,6 +401,137 @@ function schedulePreview() {
   }, 300);
 }
 
+/* ---------- Contractor distribution ledger ---------- */
+
+let ledgerState = null;
+
+function brisbaneTodayStr() {
+  return new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10);
+}
+
+function ledgerQueryString() {
+  const from = $('ledgerFrom')?.value || '';
+  const to = $('ledgerTo')?.value || '';
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  const qs = p.toString();
+  return qs ? `?${qs}` : '';
+}
+
+function renderLedger(view) {
+  ledgerState = view;
+  const { config: c, summary: s, entries } = view;
+  const a = s.contractorA;
+  const b = s.contractorB;
+
+  const basisLabel = c.gstBasis === 'ex_gst'
+    ? 'Ex-GST net revenue (10% Australian GST set aside first)'
+    : 'Gross AUD collected (inclusive of GST)';
+  $('ledgerBasisHint').textContent = `Split basis: ${basisLabel} · ${a.name} (${a.sharePct}%) / ${b.name} (${b.sharePct}%).`;
+
+  const banner = $('ledgerSettlement');
+  if (s.settlement.amountCents > 0) {
+    const payer = s.settlement.from === 'contractor_a' ? a.name : b.name;
+    const payee = s.settlement.to === 'contractor_a' ? a.name : b.name;
+    banner.className = 'ledger-banner pending';
+    banner.innerHTML = `<strong>Settlement due:</strong> ${escapeHtml(payer)} owes <strong>${escapeHtml(payee)}</strong> <strong>${formatAud(s.settlement.amountCents)}</strong>`;
+  } else {
+    banner.className = 'ledger-banner settled';
+    banner.innerHTML = `<strong>All settled:</strong> ${escapeHtml(a.name)} and ${escapeHtml(b.name)} are currently balanced at AUD$0 owed.`;
+  }
+  if ($('ledgerPrefillBtn')) {
+    $('ledgerPrefillBtn').disabled = !superadmin || s.settlement.amountCents <= 0;
+  }
+
+  const stat = (label, value, sub = '') => `<div class="stat"><span>${label}</span><strong>${value}</strong>${sub ? `<small class="hint">${sub}</small>` : ''}</div>`;
+  $('ledgerSummary').innerHTML = [
+    stat('Total collected (inc. GST)', formatAud(s.totalGrossCents), `Online ${formatAud(s.onlineGrossCents)} · Cash ${formatAud(s.cashGrossCents)}`),
+    stat('GST set aside', formatAud(s.totalGstCents), `Online ${formatAud(s.onlineGstCents)} · Cash ${formatAud(s.cashGstCents)}`),
+    stat('Distributable pool', formatAud(s.distributablePoolCents), c.gstBasis === 'ex_gst' ? 'Ex-GST net revenue' : 'Gross AUD'),
+    stat('Settled between contractors', formatAud(s.distributedAToBCents + s.distributedBToACents), `${a.name} -> ${b.name}: ${formatAud(s.distributedAToBCents)}`),
+  ].join('');
+
+  const contractorCard = (k) => {
+    const balClass = k.balanceCents > 0 ? 'pos' : k.balanceCents < 0 ? 'neg' : '';
+    const balNote = k.balanceCents > 0
+      ? `Owed ${formatAud(k.balanceCents)}`
+      : k.balanceCents < 0
+        ? `Owes ${formatAud(-k.balanceCents)}`
+        : 'Balanced (AUD$0)';
+    return `<article class="card ledger-contractor-card" data-testid="ledger-card-${k.id}" data-agent-id="ledger-card-${k.id}">
+      <header>
+        <div><h3>${escapeHtml(k.name)}</h3><p class="hint">${escapeHtml(k.role)}</p></div>
+        <span class="status-pill ok">${k.sharePct}% share</span>
+      </header>
+      <dl class="details">
+        <div><dt>Collected (gross)</dt><dd>${formatAud(k.grossCollectedCents)}</dd></div>
+        <div><dt>GST held</dt><dd>${formatAud(k.gstHeldCents)}</dd></div>
+        <div><dt>Pool held (${c.gstBasis === 'ex_gst' ? 'ex-GST' : 'gross'})</dt><dd>${formatAud(k.heldForSplitCents)}</dd></div>
+        <div><dt>${k.sharePct}% entitlement</dt><dd>${formatAud(k.entitlementCents)}</dd></div>
+        <div><dt>Distributions out / in</dt><dd>${formatAud(k.distributionsOutCents)} / ${formatAud(k.distributionsInCents)}</dd></div>
+        <div><dt>Net balance</dt><dd class="${balClass}">${balNote}</dd></div>
+      </dl>
+    </article>`;
+  };
+  $('ledgerContractors').innerHTML = contractorCard(a) + contractorCard(b);
+
+  if ($('lcCollector')) {
+    $('lcCollector').options[0].textContent = b.name;
+    $('lcCollector').options[1].textContent = a.name;
+  }
+  if ($('ldDirection')) {
+    $('ldDirection').options[0].textContent = `${a.name} -> ${b.name}`;
+    $('ldDirection').options[1].textContent = `${b.name} -> ${a.name}`;
+  }
+  if ($('lcDate') && !$('lcDate').value) $('lcDate').value = brisbaneTodayStr();
+  if ($('ldDate') && !$('ldDate').value) $('ldDate').value = brisbaneTodayStr();
+
+  if ($('cfgAName')) $('cfgAName').value = c.contractorA.name;
+  if ($('cfgARole')) $('cfgARole').value = c.contractorA.role;
+  if ($('cfgAShare')) $('cfgAShare').value = c.contractorA.sharePct;
+  if ($('cfgBName')) $('cfgBName').value = c.contractorB.name;
+  if ($('cfgBRole')) $('cfgBRole').value = c.contractorB.role;
+  if ($('cfgBShare')) $('cfgBShare').value = c.contractorB.sharePct;
+  if ($('cfgGstBasis')) $('cfgGstBasis').value = c.gstBasis;
+
+  if ($('ledgerCsvLink')) $('ledgerCsvLink').href = `/api/admin/ledger/export.csv${ledgerQueryString()}`;
+
+  const kindLabel = {
+    payment: 'Stripe / online',
+    refund: 'Refund',
+    cash_payment: 'Cash payment',
+    distribution: 'Distribution',
+  };
+  $('ledgerTable').innerHTML = entries.length ? `<table class="table">
+    <thead><tr><th>Date</th><th>Type</th><th>Party / Direction</th><th>Detail</th><th class="num">Gross (AUD)</th><th class="num">GST</th><th class="num">Ex-GST / Dist.</th><th></th></tr></thead>
+    <tbody>${entries.map((e) => {
+      const isDist = e.kind === 'distribution';
+      const rightAmt = isDist ? formatAud(e.distributionCents) : formatAud(e.exGstCents);
+      const delControls = e.deletable && superadmin
+        ? `<button class="btn btn-small btn-ghost" type="button" data-ledger-del-start="${e.id}" data-testid="ledger-del-${e.id}" data-agent-id="ledger-del-${e.id}">Delete</button>
+           <span class="inline-confirm" data-ledger-del-box="${e.id}" hidden>
+             <button class="btn btn-small btn-danger" type="button" data-ledger-del-confirm="${e.id}" data-testid="ledger-del-confirm-${e.id}" data-agent-id="ledger-del-confirm-${e.id}">Confirm delete</button>
+             <button class="btn btn-small btn-ghost" type="button" data-ledger-del-cancel="${e.id}" data-testid="ledger-del-cancel-${e.id}" data-agent-id="ledger-del-cancel-${e.id}">Cancel</button>
+           </span>`
+        : '';
+      return `<tr>
+        <td>${escapeHtml(e.entryDate || formatStamp(e.createdAt))}</td>
+        <td><span class="status-pill ${e.kind === 'refund' ? 'bad' : e.kind === 'distribution' ? 'wait' : 'ok'}">${kindLabel[e.kind] || escapeHtml(e.kind)}</span></td>
+        <td>${escapeHtml(e.partyLabel)}${e.method ? `<br><small class="hint">${escapeHtml(e.method)}</small>` : ''}</td>
+        <td>${escapeHtml(e.note || '')}${e.reference ? `<br><small class="hint">${escapeHtml(e.reference)}</small>` : ''}</td>
+        <td class="num">${isDist ? '–' : formatAud(e.grossCents)}</td>
+        <td class="num">${isDist ? '–' : formatAud(e.gstCents)}</td>
+        <td class="num ${isDist ? 'pos' : e.exGstCents < 0 ? 'neg' : ''}">${rightAmt}</td>
+        <td class="actions">${delControls}</td>
+      </tr>`;
+    }).join('')}</tbody></table>` : '<p class="hint">No ledger entries in this period yet.</p>';
+}
+
+async function loadLedger() {
+  renderLedger(await api(`/admin/ledger${ledgerQueryString()}`));
+}
+
 /* ---------- Settings ---------- */
 
 async function loadSettings() {
@@ -493,6 +626,35 @@ function bindEvents() {
         await api(`/admin/staff/${staff.dataset.staff}/disabled`, { method: 'POST', body: { disabled: staff.dataset.disable === 'true' } });
         return loadStaff();
       }
+
+      const lDelStart = t.closest('[data-ledger-del-start]');
+      if (lDelStart) {
+        const id = lDelStart.dataset.ledgerDelStart;
+        lDelStart.hidden = true;
+        const box = document.querySelector(`[data-ledger-del-box="${id}"]`);
+        if (box) box.hidden = false;
+        return;
+      }
+
+      const lDelCancel = t.closest('[data-ledger-del-cancel]');
+      if (lDelCancel) {
+        const id = lDelCancel.dataset.ledgerDelCancel;
+        const box = document.querySelector(`[data-ledger-del-box="${id}"]`);
+        const start = document.querySelector(`[data-ledger-del-start="${id}"]`);
+        if (box) box.hidden = true;
+        if (start) start.hidden = false;
+        return;
+      }
+
+      const lDelConfirm = t.closest('[data-ledger-del-confirm]');
+      if (lDelConfirm) {
+        const id = lDelConfirm.dataset.ledgerDelConfirm;
+        const res = await api(`/admin/ledger/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        toast('Ledger entry deleted.', 'success');
+        if (res.ledger) renderLedger(res.ledger);
+        else await loadLedger();
+        return;
+      }
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -574,6 +736,108 @@ function bindEvents() {
     } catch (err) {
       toast(err.message, 'error');
     }
+  });
+
+  $('ledgerPrefillBtn')?.addEventListener('click', () => {
+    const s = ledgerState?.summary?.settlement;
+    if (!s || s.amountCents <= 0) return;
+    $('ldDate').value = brisbaneTodayStr();
+    $('ldDirection').value = s.from === 'contractor_a' ? 'a_to_b' : 'b_to_a';
+    $('ldAmount').value = (s.amountCents / 100).toFixed(2);
+    if (!$('ldNote').value) $('ldNote').value = 'Settlement distribution';
+    $('ldAmount').focus();
+  });
+
+  $('ledgerCashForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    showError($('lcError'), null);
+    try {
+      const body = {
+        entryDate: $('lcDate').value,
+        amountAud: Number($('lcAmount').value),
+        bookingRef: $('lcRef').value.trim(),
+        note: $('lcNote').value.trim(),
+      };
+      if (superadmin && $('lcCollector')) body.collectedBy = $('lcCollector').value;
+      const res = await api('/admin/ledger/cash', { method: 'POST', body });
+      $('lcAmount').value = '';
+      $('lcRef').value = '';
+      $('lcNote').value = '';
+      toast('Cash payment recorded in AUD.', 'success');
+      if (res.ledger) renderLedger(res.ledger);
+      else await loadLedger();
+    } catch (err) {
+      showError($('lcError'), err);
+    }
+  });
+
+  $('ledgerDistForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    showError($('ldError'), null);
+    try {
+      const dir = $('ldDirection').value;
+      const res = await api('/admin/ledger/distributions', {
+        method: 'POST',
+        body: {
+          entryDate: $('ldDate').value,
+          fromContractor: dir === 'a_to_b' ? 'contractor_a' : 'contractor_b',
+          toContractor: dir === 'a_to_b' ? 'contractor_b' : 'contractor_a',
+          amountAud: Number($('ldAmount').value),
+          method: $('ldMethod').value,
+          reference: $('ldRef').value.trim(),
+          note: $('ldNote').value.trim(),
+        },
+      });
+      $('ldAmount').value = '';
+      $('ldRef').value = '';
+      $('ldNote').value = '';
+      toast('Contractor distribution recorded.', 'success');
+      if (res.ledger) renderLedger(res.ledger);
+      else await loadLedger();
+    } catch (err) {
+      showError($('ldError'), err);
+    }
+  });
+
+  $('cfgAShare')?.addEventListener('input', () => {
+    const a = Number($('cfgAShare').value);
+    if (Number.isInteger(a) && a >= 0 && a <= 100 && $('cfgBShare')) $('cfgBShare').value = 100 - a;
+  });
+  $('cfgBShare')?.addEventListener('input', () => {
+    const b = Number($('cfgBShare').value);
+    if (Number.isInteger(b) && b >= 0 && b <= 100 && $('cfgAShare')) $('cfgAShare').value = 100 - b;
+  });
+
+  $('ledgerConfigForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    showError($('cfgLedgerError'), null);
+    try {
+      const ledger = await api('/admin/ledger/config', {
+        method: 'PUT',
+        body: {
+          contractor_a_name: $('cfgAName').value.trim(),
+          contractor_a_role: $('cfgARole').value.trim(),
+          contractor_a_share_pct: Number($('cfgAShare').value),
+          contractor_b_name: $('cfgBName').value.trim(),
+          contractor_b_role: $('cfgBRole').value.trim(),
+          contractor_b_share_pct: Number($('cfgBShare').value),
+          distribution_gst_basis: $('cfgGstBasis').value,
+        },
+      });
+      toast('Contractor & split settings saved.', 'success');
+      renderLedger(ledger);
+    } catch (err) {
+      showError($('cfgLedgerError'), err);
+    }
+  });
+
+  $('ledgerFilterApply')?.addEventListener('click', () => {
+    loadLedger().catch((err) => toast(err.message, 'error'));
+  });
+  $('ledgerFilterClear')?.addEventListener('click', () => {
+    $('ledgerFrom').value = '';
+    $('ledgerTo').value = '';
+    loadLedger().catch((err) => toast(err.message, 'error'));
   });
 }
 

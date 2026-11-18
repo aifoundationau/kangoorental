@@ -5,8 +5,9 @@ import {
 import { HttpError, requireAdmin, requireSuperadmin, hashPassword, destroyAllSessions } from '../security.js';
 import {
   str, int, validDate, brisbaneToday, brisbaneDate, brisbaneTime, addDays, quote, floorWhole, maxRentalDays, handoverRules,
-  isHandoverDay, PATTERNS,
+  isHandoverDay, PATTERNS, formatAud,
 } from '../util.js';
+import { computeLedger, ledgerToCsv, splitGstFromGross } from '../ledger.js';
 import { publicUser, getUser, createUser } from './auth.js';
 import { cancelBooking } from './bookings.js';
 import { postMessage, readThread } from './account.js';
@@ -26,15 +27,23 @@ router.get('/admin/stats', async (req, res) => {
   const now = Date.now();
   const since = new Date(now - 30 * 86400000).toISOString();
   const customers = col.users.where('role', '==', 'supporter');
-  const [customerCount, pending, liveBookings, threads, paymentSnap] = await Promise.all([
+  const [customerCount, pending, liveBookings, threads, paymentSnap, allPaymentsSnap, ledgerSnap, settings] = await Promise.all([
     customers.where('disabled', '==', false).count().get(),
     customers.where('licenceStatus', '==', 'pending').count().get(),
     col.bookings.where('status', 'in', ['confirmed', 'active']).get(),
     col.threads.where('unreadForAdmin', '>', 0).get(),
     col.payments.where('createdAt', '>=', since).get(),
+    col.payments.get(),
+    col.ledgerEntries.get(),
+    getSettings(),
   ]);
   const live = allDocs(liveBookings);
   const revenueAudCents30d = allDocs(paymentSnap).reduce((n, p) => n + (p.amountCents || 0), 0);
+  const ledger = computeLedger({
+    payments: allDocs(allPaymentsSnap),
+    ledgerEntries: allDocs(ledgerSnap),
+    settings,
+  });
   res.json({
     customers: customerCount.data().count,
     pendingLicences: pending.data().count,
@@ -42,6 +51,8 @@ router.get('/admin/stats', async (req, res) => {
     activeBookings: live.filter((b) => b.status === 'active').length,
     unreadMessages: threads.docs.reduce((n, d) => n + d.data().unreadForAdmin, 0),
     revenueAudCents30d,
+    owedAToBCents: ledger.summary.owedAToBCents,
+    settlement: ledger.summary.settlement,
   });
 });
 
@@ -103,6 +114,16 @@ const SETTING_RULES = {
   contact_email: (v) => str(v, { field: 'Contact email', required: false, max: 120 }),
   contact_phone: (v) => str(v, { field: 'Contact phone', required: false, max: 30 }),
   announcement: (v) => str(v, { field: 'Announcement', required: false, max: 300 }),
+  contractor_a_name: (v) => str(v, { field: 'Contractor A name', min: 2, max: 80 }),
+  contractor_a_role: (v) => str(v, { field: 'Contractor A responsibilities', min: 2, max: 200 }),
+  contractor_a_share_pct: (v) => int(v, { field: 'Contractor A share (%)', min: 0, max: 100 }),
+  contractor_b_name: (v) => str(v, { field: 'Contractor B name', min: 2, max: 80 }),
+  contractor_b_role: (v) => str(v, { field: 'Contractor B responsibilities', min: 2, max: 200 }),
+  contractor_b_share_pct: (v) => int(v, { field: 'Contractor B share (%)', min: 0, max: 100 }),
+  distribution_gst_basis: (v) => {
+    if (!['ex_gst', 'inc_gst'].includes(v)) throw new HttpError(400, 'Distribution GST basis must be ex_gst or inc_gst.');
+    return v;
+  },
 };
 
 function cleanSettings(updates) {
@@ -126,6 +147,9 @@ router.put('/admin/settings', requireSuperadmin, async (req, res) => {
   const merged = { ...(await getSettings()), ...clean };
   if (Number(merged.first_pickup_hour) > Number(merged.last_pickup_hour)) {
     throw new HttpError(400, 'First pickup hour must be before the last pickup hour.');
+  }
+  if (Number(merged.contractor_a_share_pct) + Number(merged.contractor_b_share_pct) !== 100) {
+    throw new HttpError(400, 'Contractor split percentages must add up to 100%.');
   }
   await setSettings(clean);
   audit(req.user.id, 'settings.update', Object.entries(clean).map(([k, v]) => `${k}=${v}`).join(' '), req.ip);
@@ -380,6 +404,166 @@ router.post('/admin/staff/:id/disabled', requireSuperadmin, async (req, res) => 
   if (disabled) await destroyAllSessions(id);
   audit(req.user.id, disabled ? 'staff.disable' : 'staff.enable', `user ${id}`, req.ip);
   res.json({ ok: true });
+});
+
+/* ---------- Contractor distribution ledger ---------- */
+
+function parseLedgerRange(query = {}) {
+  const from = query.from ? validDate(query.from, 'From date', false) : '';
+  const to = query.to ? validDate(query.to, 'To date', false) : '';
+  if (from && to && to < from) throw new HttpError(400, 'End date must be on or after start date.');
+  return { from, to };
+}
+
+function parseAudCents(value, field = 'Amount (AUD)') {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 100000) {
+    throw new HttpError(400, `${field} must be between $0.01 and $100,000.`);
+  }
+  const cents = Math.round(n * 100);
+  if (cents < 1) throw new HttpError(400, `${field} must be at least $0.01.`);
+  return cents;
+}
+
+async function loadLedgerView(from = '', to = '') {
+  const [settings, paymentsSnap, ledgerSnap] = await Promise.all([
+    getSettings(),
+    col.payments.get(),
+    col.ledgerEntries.get(),
+  ]);
+  return computeLedger({
+    payments: allDocs(paymentsSnap),
+    ledgerEntries: allDocs(ledgerSnap),
+    settings,
+    from,
+    to,
+  });
+}
+
+router.get('/admin/ledger', async (req, res) => {
+  const { from, to } = parseLedgerRange(req.query);
+  res.json(await loadLedgerView(from, to));
+});
+
+router.get('/admin/ledger/export.csv', async (req, res) => {
+  const { from, to } = parseLedgerRange(req.query);
+  const view = await loadLedgerView(from, to);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="kangoo-distribution-ledger.csv"');
+  res.send(ledgerToCsv(view));
+});
+
+const LEDGER_CONFIG_KEYS = new Set([
+  'contractor_a_name',
+  'contractor_a_role',
+  'contractor_a_share_pct',
+  'contractor_b_name',
+  'contractor_b_role',
+  'contractor_b_share_pct',
+  'distribution_gst_basis',
+]);
+
+router.put('/admin/ledger/config', requireSuperadmin, async (req, res) => {
+  const raw = req.body || {};
+  const updates = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (!LEDGER_CONFIG_KEYS.has(k)) throw new HttpError(400, `Unknown ledger setting: ${k}`);
+    updates[k] = v;
+  }
+  const clean = cleanSettings(updates);
+  const merged = { ...(await getSettings()), ...clean };
+  if (Number(merged.contractor_a_share_pct) + Number(merged.contractor_b_share_pct) !== 100) {
+    throw new HttpError(400, 'Contractor split percentages must add up to 100%.');
+  }
+  await setSettings(clean);
+  audit(req.user.id, 'ledger.config', `${merged.contractor_a_name}=${merged.contractor_a_share_pct}%/${merged.contractor_b_name}=${merged.contractor_b_share_pct}% (${merged.distribution_gst_basis})`, req.ip);
+  res.json(await loadLedgerView());
+});
+
+router.post('/admin/ledger/cash', async (req, res) => {
+  const b = req.body || {};
+  const allowedKeys = new Set(['entryDate', 'amountAud', 'collectedBy', 'bookingRef', 'note']);
+  for (const k of Object.keys(b)) {
+    if (!allowedKeys.has(k)) throw new HttpError(400, `Unknown field: ${k}`);
+  }
+  const entryDate = b.entryDate ? validDate(b.entryDate, 'Payment date') : brisbaneToday();
+  const grossAudCents = parseAudCents(b.amountAud, 'Cash amount (AUD)');
+  const bookingRef = str(b.bookingRef, { field: 'Booking reference', required: false, max: 40 });
+  const note = str(b.note, { field: 'Note', min: 3, max: 300 });
+  const collectedBy = req.user.role === 'superadmin' && b.collectedBy === 'contractor_a'
+    ? 'contractor_a'
+    : 'contractor_b';
+
+  const settings = await getSettings();
+  const gstRateBp = Number(settings.gst_rate_bp) || 1000;
+  const { gstCents, exGstCents } = splitGstFromGross(grossAudCents, gstRateBp);
+  const doc = {
+    kind: 'cash_payment',
+    entryDate,
+    grossAudCents,
+    gstAudCents: gstCents,
+    netExGstAudCents: exGstCents,
+    currency: 'AUD',
+    collectedBy,
+    bookingRef: bookingRef || null,
+    note,
+    createdByUserId: req.user.id,
+    createdByName: req.user.fullName || req.user.email,
+    createdAt: nowIso(),
+  };
+  const ref = await col.ledgerEntries.add(doc);
+  audit(req.user.id, 'ledger.cash', `${formatAud(grossAudCents)} (${collectedBy}): ${note}`, req.ip);
+  res.status(201).json({ entry: { id: ref.id, ...doc }, ledger: await loadLedgerView() });
+});
+
+router.post('/admin/ledger/distributions', requireSuperadmin, async (req, res) => {
+  const b = req.body || {};
+  const allowedKeys = new Set(['entryDate', 'fromContractor', 'toContractor', 'amountAud', 'method', 'reference', 'note']);
+  for (const k of Object.keys(b)) {
+    if (!allowedKeys.has(k)) throw new HttpError(400, `Unknown field: ${k}`);
+  }
+  const entryDate = b.entryDate ? validDate(b.entryDate, 'Distribution date') : brisbaneToday();
+  const fromContractor = String(b.fromContractor || '');
+  const toContractor = String(b.toContractor || '');
+  if (!['contractor_a', 'contractor_b'].includes(fromContractor) || !['contractor_a', 'contractor_b'].includes(toContractor) || fromContractor === toContractor) {
+    throw new HttpError(400, 'Choose two different contractors for the distribution.');
+  }
+  const amountAudCents = parseAudCents(b.amountAud, 'Distribution amount (AUD)');
+  const method = String(b.method || 'bank_transfer');
+  if (!['bank_transfer', 'cash', 'stripe_payout', 'other'].includes(method)) {
+    throw new HttpError(400, 'Invalid distribution payment method.');
+  }
+  const reference = str(b.reference, { field: 'Reference', required: false, max: 80 });
+  const note = str(b.note, { field: 'Note', min: 3, max: 300 });
+
+  const doc = {
+    kind: 'distribution',
+    entryDate,
+    fromContractor,
+    toContractor,
+    amountAudCents,
+    currency: 'AUD',
+    method,
+    reference: reference || null,
+    note,
+    createdByUserId: req.user.id,
+    createdByName: req.user.fullName || req.user.email,
+    createdAt: nowIso(),
+  };
+  const ref = await col.ledgerEntries.add(doc);
+  audit(req.user.id, 'ledger.distribution', `${fromContractor} -> ${toContractor} ${formatAud(amountAudCents)} (${method}): ${note}`, req.ip);
+  res.status(201).json({ entry: { id: ref.id, ...doc }, ledger: await loadLedgerView() });
+});
+
+router.delete('/admin/ledger/:id', requireSuperadmin, async (req, res) => {
+  const id = String(req.params.id);
+  const ref = col.ledgerEntries.doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpError(404, 'Ledger entry not found.');
+  const e = snap.data();
+  await ref.delete();
+  audit(req.user.id, 'ledger.delete', `${e.kind} ${id}`, req.ip);
+  res.json({ ok: true, ledger: await loadLedgerView() });
 });
 
 /* ---------- Audit log ---------- */

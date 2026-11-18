@@ -19,6 +19,7 @@
             <button role="tab" data-tab="messages">Messages <span class="badge" id="tabUnread" hidden></span></button>
             <button role="tab" data-tab="handover" data-super>Block out dates</button>
             <button role="tab" data-tab="pricing">Pricing (AUD)</button>
+            <button role="tab" data-tab="ledger" data-testid="tab-ledger" data-agent-id="tab-ledger">Distribution ledger</button>
             <button role="tab" data-tab="settings" data-super>Settings</button>
             <button role="tab" data-tab="staff" data-super>Staff</button>
             <button role="tab" data-tab="audit">Audit log</button>
@@ -175,6 +176,159 @@
                 <select id="stRole"><option value="admin">Admin (bookings, customers, messages)</option><option value="superadmin">Superadmin (everything, including pricing)</option></select></div>
               <button class="btn" type="submit">Create account</button>
             </form>
+          </div>
+
+          <!-- Distribution ledger -->
+          <div class="tab-panel" data-panel="ledger" role="tabpanel" hidden>
+            <div class="ledger-head">
+              <div>
+                <h2>Contractor distribution ledger (AUD)</h2>
+                <p class="hint" id="ledgerBasisHint">All Stripe bookings, cash payments, and contractor distributions in Australian dollars (AUD).</p>
+              </div>
+              <button class="btn btn-small btn-ghost" type="button" id="ledgerPrefillBtn" data-super data-testid="ledger-prefill-btn" data-agent-id="ledger-prefill-btn">Pre-fill settlement</button>
+            </div>
+
+            <div class="ledger-banner" id="ledgerSettlement" role="status" aria-live="polite"></div>
+
+            <div class="stats" id="ledgerSummary"></div>
+
+            <div class="ledger-contractors" id="ledgerContractors"></div>
+
+            <div class="ledger-forms">
+              <form class="card stack" id="ledgerCashForm">
+                <h3>Record cash payment (AUD)</h3>
+                <p class="hint" id="lcCollectorHint">Cash collected is logged against Car Shop and added to the distribution pool.</p>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="lcDate">Payment date</label>
+                    <input id="lcDate" type="date" required data-testid="ledger-cash-date" data-agent-id="ledger-cash-date">
+                  </div>
+                  <div class="field">
+                    <label for="lcAmount">Gross cash amount (AUD$ inc. GST)</label>
+                    <input id="lcAmount" type="number" min="0.01" max="100000" step="0.01" required placeholder="e.g. 99.00" data-testid="ledger-cash-amount" data-agent-id="ledger-cash-amount">
+                  </div>
+                </div>
+                <div class="field" id="lcCollectorWrap" data-super>
+                  <label for="lcCollector">Collected by</label>
+                  <select id="lcCollector" data-testid="ledger-cash-collector" data-agent-id="ledger-cash-collector">
+                    <option value="contractor_b">Car Shop (TBD)</option>
+                    <option value="contractor_a">David Robertson</option>
+                  </select>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="lcRef">Booking reference <span class="optional">(optional)</span></label>
+                    <input id="lcRef" maxlength="40" placeholder="e.g. KR-ABC123" data-testid="ledger-cash-ref" data-agent-id="ledger-cash-ref">
+                  </div>
+                  <div class="field">
+                    <label for="lcNote">Description / note</label>
+                    <input id="lcNote" required minlength="3" maxlength="300" placeholder="e.g. Cash hire payment" data-testid="ledger-cash-note" data-agent-id="ledger-cash-note">
+                  </div>
+                </div>
+                <p class="form-error" id="lcError" role="alert" hidden></p>
+                <button class="btn btn-small" type="submit" data-testid="ledger-cash-submit" data-agent-id="ledger-cash-submit">Record cash payment</button>
+              </form>
+
+              <form class="card stack" id="ledgerDistForm" data-super>
+                <h3>Record distribution payout (AUD)</h3>
+                <p class="hint">Log a payout or transfer between contractors to settle the balance.</p>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="ldDate">Distribution date</label>
+                    <input id="ldDate" type="date" required data-testid="ledger-dist-date" data-agent-id="ledger-dist-date">
+                  </div>
+                  <div class="field">
+                    <label for="ldAmount">Amount (AUD$)</label>
+                    <input id="ldAmount" type="number" min="0.01" max="100000" step="0.01" required placeholder="e.g. 45.00" data-testid="ledger-dist-amount" data-agent-id="ledger-dist-amount">
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="ldDirection">Direction</label>
+                    <select id="ldDirection" data-testid="ledger-dist-direction" data-agent-id="ledger-dist-direction">
+                      <option value="a_to_b">David Robertson &rarr; Car Shop (TBD)</option>
+                      <option value="b_to_a">Car Shop (TBD) &rarr; David Robertson</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="ldMethod">Method</label>
+                    <select id="ldMethod" data-testid="ledger-dist-method" data-agent-id="ledger-dist-method">
+                      <option value="bank_transfer">Bank transfer</option>
+                      <option value="cash">Cash</option>
+                      <option value="stripe_payout">Stripe payout</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="ldRef">Reference <span class="optional">(optional)</span></label>
+                    <input id="ldRef" maxlength="80" placeholder="e.g. EFT-20261119" data-testid="ledger-dist-ref" data-agent-id="ledger-dist-ref">
+                  </div>
+                  <div class="field">
+                    <label for="ldNote">Note</label>
+                    <input id="ldNote" required minlength="3" maxlength="300" placeholder="e.g. Weekly 50/50 distribution" data-testid="ledger-dist-note" data-agent-id="ledger-dist-note">
+                  </div>
+                </div>
+                <p class="form-error" id="ldError" role="alert" hidden></p>
+                <button class="btn btn-small" type="submit" data-testid="ledger-dist-submit" data-agent-id="ledger-dist-submit">Record distribution</button>
+              </form>
+            </div>
+
+            <details class="card ledger-config-details" data-super>
+              <summary><strong>Contractor &amp; split settings</strong> <span class="hint">(SuperAdmin only)</span></summary>
+              <form class="stack mt-sm" id="ledgerConfigForm">
+                <div class="field-row three">
+                  <div class="field">
+                    <label for="cfgAName">Contractor 1 name</label>
+                    <input id="cfgAName" required minlength="2" maxlength="80" data-testid="ledger-cfg-a-name" data-agent-id="ledger-cfg-a-name">
+                  </div>
+                  <div class="field">
+                    <label for="cfgARole">Responsibilities</label>
+                    <input id="cfgARole" required minlength="2" maxlength="200" data-testid="ledger-cfg-a-role" data-agent-id="ledger-cfg-a-role">
+                  </div>
+                  <div class="field">
+                    <label for="cfgAShare">Split share (%)</label>
+                    <input id="cfgAShare" type="number" min="0" max="100" step="1" required data-testid="ledger-cfg-a-share" data-agent-id="ledger-cfg-a-share">
+                  </div>
+                </div>
+                <div class="field-row three">
+                  <div class="field">
+                    <label for="cfgBName">Contractor 2 name</label>
+                    <input id="cfgBName" required minlength="2" maxlength="80" data-testid="ledger-cfg-b-name" data-agent-id="ledger-cfg-b-name">
+                  </div>
+                  <div class="field">
+                    <label for="cfgBRole">Responsibilities</label>
+                    <input id="cfgBRole" required minlength="2" maxlength="200" data-testid="ledger-cfg-b-role" data-agent-id="ledger-cfg-b-role">
+                  </div>
+                  <div class="field">
+                    <label for="cfgBShare">Split share (%)</label>
+                    <input id="cfgBShare" type="number" min="0" max="100" step="1" required data-testid="ledger-cfg-b-share" data-agent-id="ledger-cfg-b-share">
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="cfgGstBasis">Distribution calculation basis</label>
+                  <select id="cfgGstBasis" data-testid="ledger-cfg-gst-basis" data-agent-id="ledger-cfg-gst-basis">
+                    <option value="ex_gst">Ex-GST net revenue (sets aside 10% Australian GST first)</option>
+                    <option value="inc_gst">Gross AUD collected (inclusive of GST)</option>
+                  </select>
+                </div>
+                <p class="form-error" id="cfgLedgerError" role="alert" hidden></p>
+                <button class="btn btn-small" type="submit" data-testid="ledger-config-save" data-agent-id="ledger-config-save">Save contractor &amp; split settings</button>
+              </form>
+            </details>
+
+            <h3 class="mt">Ledger entries</h3>
+            <div class="toolbar">
+              <label for="ledgerFrom">From</label>
+              <input id="ledgerFrom" type="date" data-testid="ledger-filter-from" data-agent-id="ledger-filter-from">
+              <label for="ledgerTo">To</label>
+              <input id="ledgerTo" type="date" data-testid="ledger-filter-to" data-agent-id="ledger-filter-to">
+              <button class="btn btn-small" type="button" id="ledgerFilterApply" data-testid="ledger-filter-apply" data-agent-id="ledger-filter-apply">Filter</button>
+              <button class="btn btn-small btn-ghost" type="button" id="ledgerFilterClear" data-testid="ledger-filter-clear" data-agent-id="ledger-filter-clear">Clear</button>
+              <a class="btn btn-small btn-ghost" id="ledgerCsvLink" href="/api/admin/ledger/export.csv" data-testid="ledger-csv-link" data-agent-id="ledger-csv-link">Export CSV</a>
+            </div>
+            <div class="table-wrap" id="ledgerTable"></div>
           </div>
 
           <!-- Audit -->

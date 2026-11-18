@@ -11,6 +11,7 @@ import { config, DEFAULT_SETTINGS } from './config.js';
 //   bookings/{id}                    rentals; times are epoch ms
 //   blocks/{id}                      dates the van is unavailable
 //   payments/{id}                    AUD payment and refund ledger; Stripe payments use id stripe_<checkout session id>
+//   ledgerEntries/{id}               manual cash payments & contractor distribution payouts
 //   threads/{userId}                 message thread summary; messages in threads/{userId}/messages
 //   auditLog/{id}                    security-relevant events
 //   locks/calendar                   touched by every booking change so overlapping bookings serialise
@@ -33,6 +34,7 @@ export const col = {
   bookings: firestore.collection('bookings'),
   blocks: firestore.collection('blocks'),
   payments: firestore.collection('payments'),
+  ledgerEntries: firestore.collection('ledgerEntries'),
   threads: firestore.collection('threads'),
   auditLog: firestore.collection('auditLog'),
   locks: firestore.collection('locks'),

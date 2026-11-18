@@ -424,6 +424,27 @@ legend { font-weight: 700; padding: 0 .4rem; }
 .calc-steps { margin: 0; padding-left: 1.3rem; }
 .calc-steps li { margin-bottom: .4rem; }
 
+/* Distribution ledger */
+[hidden] { display: none !important; }
+.ledger-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.ledger-head h2 { margin-bottom: .25rem; }
+.ledger-head .hint { margin: 0; }
+.ledger-banner { padding: .85rem 1.1rem; border-radius: 11px; margin-bottom: 1.15rem; font-size: .98rem; border: 1px solid var(--line); background: var(--bg-alt); }
+.ledger-banner.pending { background: var(--wait-bg); border-color: #f1d58f; color: var(--wait); }
+.ledger-banner.settled { background: var(--ok-bg); border-color: #bfe5cd; color: var(--ok); }
+.ledger-contractors { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 1.15rem 0; }
+.ledger-contractor-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; margin-bottom: .9rem; }
+.ledger-contractor-card h3 { margin: 0 0 .2rem; }
+.ledger-contractor-card header .hint { margin: 0; font-size: .85rem; }
+.ledger-contractor-card .details { margin-bottom: 0; }
+.ledger-contractor-card .pos { color: var(--ok); }
+.ledger-contractor-card .neg { color: var(--bad); }
+.ledger-forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin: 1.15rem 0; align-items: start; }
+.ledger-forms h3 { margin-bottom: .25rem; }
+.ledger-config-details { margin-top: 1rem; }
+.ledger-config-details summary { cursor: pointer; }
+.inline-confirm { display: inline-flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+
 /* Legal pages */
 .legal { max-width: 780px; }
 .legal h2 { margin-top: 2rem; font-size: 1.35rem; }

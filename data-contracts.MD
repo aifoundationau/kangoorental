@@ -143,3 +143,65 @@ All API, UI, and SuperAdmin settings inputs are validated on the server with str
   }
 }
 ```
+
+## 7. Contractor Distribution Ledger Contracts (`/api/admin/ledger/*`)
+
+### 7.1 Contractor & Split Settings (`PUT /api/admin/ledger/config` — SuperAdmin only)
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contractor_a_name": { "type": "string", "minLength": 2, "maxLength": 80 },
+    "contractor_a_role": { "type": "string", "minLength": 2, "maxLength": 200 },
+    "contractor_a_share_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "contractor_b_name": { "type": "string", "minLength": 2, "maxLength": 80 },
+    "contractor_b_role": { "type": "string", "minLength": 2, "maxLength": 200 },
+    "contractor_b_share_pct": { "type": "integer", "minimum": 0, "maxLength": 100 },
+    "distribution_gst_basis": { "type": "string", "enum": ["ex_gst", "inc_gst"] }
+  }
+}
+```
+Server invariant: `contractor_a_share_pct + contractor_b_share_pct === 100`.
+
+### 7.2 Record Cash Payment (`POST /api/admin/ledger/cash` — Admin & SuperAdmin)
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["amountAud", "note"],
+  "properties": {
+    "entryDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "amountAud": { "type": "number", "minimum": 0.01, "maximum": 100000 },
+    "collectedBy": { "type": "string", "enum": ["contractor_a", "contractor_b"] },
+    "bookingRef": { "type": "string", "maxLength": 40 },
+    "note": { "type": "string", "minLength": 3, "maxLength": 300 }
+  }
+}
+```
+Server invariant: regular `admin` users are always recorded as `collectedBy: "contractor_b"` (Car Shop).
+
+### 7.3 Record Contractor Distribution (`POST /api/admin/ledger/distributions` — SuperAdmin only)
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fromContractor", "toContractor", "amountAud", "note"],
+  "properties": {
+    "entryDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "fromContractor": { "type": "string", "enum": ["contractor_a", "contractor_b"] },
+    "toContractor": { "type": "string", "enum": ["contractor_a", "contractor_b"] },
+    "amountAud": { "type": "number", "minimum": 0.01, "maximum": 100000 },
+    "method": { "type": "string", "enum": ["bank_transfer", "cash", "stripe_payout", "other"] },
+    "reference": { "type": "string", "maxLength": 80 },
+    "note": { "type": "string", "minLength": 3, "maxLength": 300 }
+  }
+}
+```
+Server invariant: `fromContractor !== toContractor`.
+
+### 7.4 Delete Manual Ledger Entry (`DELETE /api/admin/ledger/:id` — SuperAdmin only)
+- Only manual `ledgerEntries` documents (`cash_payment` or `distribution`) can be deleted; Stripe/demo `payments` booking records cannot be deleted.

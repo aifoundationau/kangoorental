@@ -350,6 +350,80 @@ await step('admin dashboard, customer payments and audit log load in AUD only', 
   assert.ok(audit.data.entries.some((e) => e.action === 'booking.create'));
 });
 
+await step('distribution ledger: both contractors view; Car Shop logs cash; superadmin settles and exports CSV', async () => {
+  assert.equal((await customer.api('/admin/ledger')).status, 403);
+  const sView = await staff.api('/admin/ledger');
+  assert.equal(sView.status, 200, JSON.stringify(sView.data));
+  assert.equal(sView.data.config.contractorA.name, 'David Robertson');
+  assert.equal(sView.data.config.contractorA.sharePct, 50);
+  assert.equal(sView.data.config.contractorB.name, 'Car Shop (TBD)');
+  assert.equal(sView.data.config.contractorB.sharePct, 50);
+  assert.equal(sView.data.config.gstBasis, 'ex_gst');
+
+  assert.equal((await staff.api('/admin/ledger/config', { method: 'PUT', body: { contractor_a_share_pct: 60, contractor_b_share_pct: 40 } })).status, 403);
+  assert.equal((await staff.api('/admin/ledger/distributions', {
+    method: 'POST',
+    body: { fromContractor: 'contractor_a', toContractor: 'contractor_b', amountAud: 10, note: 'Unauthorized payout' },
+  })).status, 403);
+
+  const beforeOwed = sView.data.summary.owedAToBCents;
+  const cashRes = await staff.api('/admin/ledger/cash', {
+    method: 'POST',
+    body: { amountAud: 198, note: 'Cash walk-in hire', bookingRef: 'CASH-1' },
+  });
+  assert.equal(cashRes.status, 201, JSON.stringify(cashRes.data));
+  const cashId = cashRes.data.entry.id;
+  assert.equal(cashRes.data.entry.grossAudCents, 19800);
+  assert.equal(cashRes.data.entry.gstAudCents, 1800);
+  assert.equal(cashRes.data.entry.netExGstAudCents, 18000);
+  assert.equal(cashRes.data.entry.collectedBy, 'contractor_b');
+  assert.equal(cashRes.data.ledger.summary.owedAToBCents, beforeOwed - 9000);
+
+  assert.equal((await staff.api(`/admin/ledger/${cashId}`, { method: 'DELETE' })).status, 403);
+
+  assert.equal((await admin.api('/admin/ledger/config', {
+    method: 'PUT',
+    body: { contractor_a_share_pct: 60, contractor_b_share_pct: 50 },
+  })).status, 400);
+  const split60 = await admin.api('/admin/ledger/config', {
+    method: 'PUT',
+    body: { contractor_a_share_pct: 60, contractor_b_share_pct: 40 },
+  });
+  assert.equal(split60.status, 200);
+  assert.equal(split60.data.config.contractorA.sharePct, 60);
+  const split50 = await admin.api('/admin/ledger/config', {
+    method: 'PUT',
+    body: { contractor_a_share_pct: 50, contractor_b_share_pct: 50 },
+  });
+  assert.equal(split50.status, 200);
+
+  const set = split50.data.summary.settlement;
+  assert.ok(set.amountCents > 0);
+  const distRes = await admin.api('/admin/ledger/distributions', {
+    method: 'POST',
+    body: {
+      fromContractor: set.from,
+      toContractor: set.to,
+      amountAud: set.amountCents / 100,
+      method: 'bank_transfer',
+      reference: 'EFT-SMOKE',
+      note: 'Settlement distribution',
+    },
+  });
+  assert.equal(distRes.status, 201, JSON.stringify(distRes.data));
+  const distId = distRes.data.entry.id;
+  assert.equal(distRes.data.ledger.summary.owedAToBCents, 0);
+  assert.equal(distRes.data.ledger.summary.settlement.amountCents, 0);
+
+  const csvRes = await staff.api('/admin/ledger/export.csv');
+  assert.equal(csvRes.status, 200);
+  assert.ok(csvRes.headers.get('content-type').includes('text/csv'));
+  assert.ok(csvRes.data.includes('David Robertson') && csvRes.data.includes('Cash walk-in hire'));
+
+  assert.equal((await admin.api(`/admin/ledger/${distId}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await admin.api(`/admin/ledger/${cashId}`, { method: 'DELETE' })).status, 200);
+});
+
 await step('hub returns location, time zone and AUD currency only', async () => {
   const { status, data } = await customer.api('/hub');
   assert.equal(status, 200);

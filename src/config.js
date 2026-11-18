@@ -105,4 +105,12 @@ export const DEFAULT_SETTINGS = {
   contact_email: '',
   contact_phone: '',
   announcement: '',
+  // Contractor distribution ledger defaults (editable by superadmin)
+  contractor_a_name: 'David Robertson',
+  contractor_a_role: 'Maintains booking system, Stripe payments, distributions',
+  contractor_a_share_pct: '50',
+  contractor_b_name: 'Car Shop (TBD)',
+  contractor_b_role: 'Maintains registration, insurance, cash payments',
+  contractor_b_share_pct: '50',
+  distribution_gst_basis: 'ex_gst', // 'ex_gst' | 'inc_gst'
 };
