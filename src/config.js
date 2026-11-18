@@ -33,6 +33,8 @@ function serviceAccount() {
 }
 
 const vercelUrl = env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '';
+const googleClientId = (env.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+const googleClientSecret = (env.GOOGLE_OAUTH_CLIENT_SECRET || '').trim();
 
 export const config = {
   port: Number(env.PORT || 3000),
@@ -60,9 +62,9 @@ export const config = {
 
   // Google OAuth 2.0 (Authorization Code + PKCE, plus ID token verification).
   // Credentials come strictly from environment variables (never hardcoded).
-  googleClientId: env.GOOGLE_OAUTH_CLIENT_ID || '',
-  googleClientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET || '',
-  googleOAuthEnabled: Boolean(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET),
+  googleClientId,
+  googleClientSecret,
+  googleOAuthEnabled: Boolean(googleClientId && googleClientSecret),
 
   // Google accounts that are always superadmin when they sign in with Google (comma-separated). Defaults to the
   // Firebase project owner. Only Google sign-in counts: it proves the email, a password sign-up doesn't.

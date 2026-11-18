@@ -32,7 +32,8 @@ export async function verifyGoogleCredential(credential) {
 }
 
 export function googleRedirectUri(req) {
-  if (process.env.GOOGLE_OAUTH_REDIRECT_URI) return process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  const explicit = (process.env.GOOGLE_OAUTH_REDIRECT_URI || '').trim();
+  if (explicit) return explicit;
   if (config.onVercel && req?.get('host')) return `https://${req.get('host')}/api/auth/google/callback`;
   return `${config.baseUrl}/api/auth/google/callback`;
 }

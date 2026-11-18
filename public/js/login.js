@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const cfg = await getConfig().catch(() => null);
   const googleBlock = document.querySelector('[data-google]');
-  if (googleBlock) googleBlock.hidden = !cfg?.googleOAuthEnabled;
+  if (googleBlock && cfg && cfg.googleOAuthEnabled === false) googleBlock.hidden = true;
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

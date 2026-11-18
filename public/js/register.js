@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   else {
     const cfg = await getConfig().catch(() => null);
     const block = document.querySelector('[data-google]');
-    if (block) block.hidden = !cfg?.googleOAuthEnabled;
+    if (block && cfg && cfg.googleOAuthEnabled === false) block.hidden = true;
   }
 
   const form = $('registerForm');

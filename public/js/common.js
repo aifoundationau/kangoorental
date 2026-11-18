@@ -207,7 +207,7 @@ async function initNavGoogle() {
     const next = new URLSearchParams(location.search).get('next');
     const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : '';
     btn.href = safeNext ? `/api/auth/google/start?next=${encodeURIComponent(safeNext)}` : '/api/auth/google/start';
-  } else {
+  } else if (cfg && cfg.googleOAuthEnabled === false) {
     btn.href = '/login';
     btn.textContent = 'Log in';
   }
