@@ -29,10 +29,15 @@ const isoDate = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d)
 const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
 const dayDiff = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
 const hourLabel = (h) => formatTime(Date.UTC(2000, 0, 1, h), 'UTC');
+const isWeekendDate = (date) => {
+  const d = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return d === 0 || d === 6;
+};
 
 function slotOk(date, hour, days) {
   const start = brisbaneMs(date, `${String(hour).padStart(2, '0')}:00`);
-  const end = start + days * DAY;
+  const retHour = state.cfg.firstReturnHour ?? 8;
+  const end = brisbaneMs(addDays(date, days), `${String(retHour).padStart(2, '0')}:00`);
   if (start < Date.now() + state.cfg.minNoticeHours * 3600000) return false;
   if (start > Date.now() + state.cfg.maxAdvanceDays * DAY) return false;
   return !state.busy.some((r) => r.start < end && r.end > start);
@@ -54,7 +59,8 @@ function dayStatus(date) {
   }
   if (total === 0) return 'past';
   if (open === 0) return 'booked';
-  const touched = state.busy.some((r) => r.start < dayStart + DAY && r.end > dayStart);
+  const windowStart = brisbaneMs(date, `${String(first).padStart(2, '0')}:00`);
+  const touched = state.busy.some((r) => r.start < dayStart + DAY && r.end > windowStart);
   return open < total || touched ? 'partial' : 'available';
 }
 
@@ -79,15 +85,15 @@ function updateBookingSummary() {
   const summary = $('bkSummary');
   if (!summary) return;
   if (!state.date) {
-    summary.textContent = 'Click a day panel on the calendar to begin';
+    summary.textContent = 'Click a Monday–Friday day on the calendar to begin';
     return;
   }
-  const end = addDays(state.date, state.days - 1);
-  if (state.days === 1) {
-    summary.textContent = `${formatDate(state.date)} (1 day)`;
-  } else {
-    summary.textContent = `${formatDate(state.date)} – ${formatDate(end)} (${state.days} days)`;
-  }
+  const returnDate = addDays(state.date, state.days);
+  const p1 = hourLabel(state.cfg?.firstPickupHour ?? 9);
+  const p2 = hourLabel(state.cfg?.lastPickupHour ?? 10);
+  const r1 = hourLabel(state.cfg?.firstReturnHour ?? 8);
+  const r2 = hourLabel(state.cfg?.lastReturnHour ?? 9);
+  summary.textContent = `${state.days} day${state.days > 1 ? 's' : ''}: Pickup ${formatDate(state.date)} (${p1}–${p2}) · Drop-off ${formatDate(returnDate)} (${r1}–${r2})`;
 }
 
 function renderCalendar() {
@@ -118,10 +124,20 @@ function renderCalendar() {
 }
 
 function renderTimes() {
-  const first = state.cfg?.firstPickupHour || 7;
-  state.time = state.time || `${String(first).padStart(2, '0')}:00`;
+  const first = state.cfg?.firstPickupHour ?? 9;
+  const last = state.cfg?.lastPickupHour ?? 10;
+  const retFirst = state.cfg?.firstReturnHour ?? 8;
+  const retLast = state.cfg?.lastReturnHour ?? 9;
+  const curHour = state.time ? Number(state.time.slice(0, 2)) : -1;
+  if (curHour < first || curHour > last) state.time = `${String(first).padStart(2, '0')}:00`;
   const el = $('bkTime');
   if (el) el.value = state.time;
+  const hoursEl = $('bkDepotHours');
+  if (hoursEl) {
+    const msgLink = '<a href="/messages" data-testid="bk-message-admin" data-agent-id="bk-message-admin">message admin</a>';
+    hoursEl.innerHTML = `<p class="hint"><strong>Pickup:</strong> ${hourLabel(first)} &ndash; ${hourLabel(last)} &middot; <strong>Drop-off (next day):</strong> ${hourLabel(retFirst)} &ndash; ${hourLabel(retLast)}</p>`
+      + `<p class="hint">Earlier time is OK &mdash; just ${msgLink}. <strong>Monday&ndash;Friday</strong> online; <strong>Saturday &amp; Sunday</strong> must ${msgLink} first.</p>`;
+  }
   renderReturn();
 }
 
@@ -154,6 +170,8 @@ function renderPricing() {
   renderPriceCards();
 }
 
+const formatCardPrice = (cents) => formatAud(cents).replace(/^AUD/, '<span class="pc-cur">AUD</span>');
+
 /** One price card per hire length in AUD inc. GST. */
 function renderPriceCards() {
   const list = state.cfg.priceList;
@@ -166,7 +184,7 @@ function renderPriceCards() {
         data-testid="price-card-${p.days}" data-agent-id="price-card-${p.days}" aria-label="${label} for ${audPrice} inc. GST">
       ${best ? '<span class="pc-ribbon">Best value</span>' : ''}
       <span class="pc-days">${label}</span>
-      <strong class="pc-price">${audPrice}</strong>
+      <strong class="pc-price">${formatCardPrice(p.totalCents)}</strong>
       <span class="pc-sub">inc. GST</span>
       ${saveCents > 0 ? `<span class="pc-stamp">Save ${formatAud(saveCents)}</span>` : `<span class="pc-stamp plain">${formatAud(Math.round(p.totalCents / p.days))} a day</span>`}
     </button>`;
@@ -181,7 +199,7 @@ function renderDayCards() {
     const on = p.days === state.days;
     return `<button type="button" class="postcard mini" role="radio" aria-checked="${on}" tabindex="${on ? 0 : -1}" data-days="${p.days}"
         data-testid="book-days-${p.days}" data-agent-id="book-days-${p.days}" aria-label="${label}, ${price}">
-      <span class="pc-days">${label}</span><strong class="pc-price">${price}</strong></button>`;
+      <span class="pc-days">${label}</span><strong class="pc-price">${formatCardPrice(p.totalCents)}</strong></button>`;
   }).join('');
   markDayCards();
 }
@@ -227,13 +245,23 @@ function calNote(text) {
  * The van is returned the day after the last day, at the pickup time.
  */
 function pickCalendarDay(date) {
-  if (!handoverOk(date)) return calNote(`That date (${formatDate(date)}) has no pickups or returns. Striped days cannot be booked.`);
+  if (!handoverOk(date)) {
+    return calNote(isWeekendDate(date)
+      ? `Saturday and Sunday (${formatDate(date)}) require messaging admin first. Please message admin or select a Monday–Friday date.`
+      : `That date (${formatDate(date)}) has no pickups or returns. Striped days require messaging admin first.`);
+  }
   if (!canBook(date)) return calNote(`${formatDate(date)} is already booked. Please choose another date.`);
 
   const offset = state.date ? dayDiff(state.date, date) : -1;
   if (state.date && offset > 0 && offset < state.cfg.maxRentalDays) {
-    if (runOpen(state.date, offset + 1)) {
-      const days = offset + 1;
+    const days = offset + 1;
+    const ret = addDays(state.date, days);
+    if (!handoverOk(ret)) {
+      return calNote(isWeekendDate(ret)
+        ? `Drop-off on ${formatDate(ret)} (weekend) requires messaging admin first. Please message admin or extend to a Monday–Friday return.`
+        : `Returns aren't available on ${formatDate(ret)}. Please choose another end date or message admin.`);
+    }
+    if (runOpen(state.date, days)) {
       calNote('');
       setDays(days);
       return;
@@ -250,14 +278,35 @@ function pickCalendarDay(date) {
 }
 
 function startHire(date) {
-  if (!handoverOk(date)) return calNote(`Pickups aren't available on ${formatDate(date)}. Striped days have no pickups or returns.`);
+  if (!handoverOk(date)) {
+    return calNote(isWeekendDate(date)
+      ? `Saturday and Sunday (${formatDate(date)}) require messaging admin first. Please message admin or select a Monday–Friday date.`
+      : `Pickups aren't available on ${formatDate(date)}. Striped days require messaging admin first.`);
+  }
   if (!canBook(date)) return calNote(`${formatDate(date)} is not available for booking.`);
-  calNote('');
-  state.days = 1;
+  const preferred = lengthOk(date, state.days) ? state.days : lengthOk(date, 1) ? 1 : validLengths(date)[0];
+  if (!preferred) {
+    return calNote(`No online return day is open from ${formatDate(date)} (Saturday & Sunday require messaging admin first). Please message admin.`);
+  }
+  if (preferred > 1 && !handoverOk(addDays(date, 1))) {
+    const ret = addDays(date, preferred);
+    const r1 = hourLabel(state.cfg?.firstReturnHour ?? 8);
+    const r2 = hourLabel(state.cfg?.lastReturnHour ?? 9);
+    calNote(`Saturday & Sunday drop-offs require messaging admin first — set to ${preferred} days returning ${formatDate(ret)} (${r1}–${r2}). Need a weekend drop-off? Message admin.`);
+  } else {
+    calNote('');
+  }
+  state.days = preferred;
   selectDate(date);
 }
 
 function chooseDays(days) {
+  if (state.date && !handoverOk(addDays(state.date, days))) {
+    const ret = addDays(state.date, days);
+    return calNote(isWeekendDate(ret)
+      ? `Saturday & Sunday drop-offs (${formatDate(ret)}) require messaging admin first. Please message admin or choose a length returning Monday–Friday.`
+      : `Returns aren't available on ${formatDate(ret)}. Please choose another length or message admin.`);
+  }
   if (state.date && !runOpen(state.date, days)) {
     return calNote(`A ${days}-day hire from ${formatDate(state.date)} isn't available: one or more days are booked.`);
   }
@@ -352,7 +401,7 @@ async function submitBooking(e) {
   const errEl = $('bkError');
   showError(errEl, null);
   if (!state.date) return showError(errEl, new Error('Please click an available day panel on the calendar.'));
-  state.time = state.time || '07:00';
+  state.time = state.time || `${String(state.cfg?.firstPickupHour ?? 9).padStart(2, '0')}:00`;
 
   if (!state.me) {
     sessionStorage.setItem(PENDING_KEY, JSON.stringify({ date: state.date, time: state.time, days: state.days }));

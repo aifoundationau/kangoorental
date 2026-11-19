@@ -161,8 +161,10 @@ export async function shrinkImage(file, maxDim = 1600) {
 }
 
 export async function withShrunkLicence(formData) {
-  const photo = formData.get('licence');
-  if (photo instanceof File && photo.size) formData.set('licence', await shrinkImage(photo), 'licence.jpg');
+  const front = formData.get('licence');
+  if (front instanceof File && front.size) formData.set('licence', await shrinkImage(front, 1400), 'licence-front.jpg');
+  const back = formData.get('licenceBack');
+  if (back instanceof File && back.size) formData.set('licenceBack', await shrinkImage(back, 1400), 'licence-back.jpg');
   return formData;
 }
 
@@ -220,6 +222,16 @@ function updateNav(user) {
   if (account && user) {
     account.textContent = isStaff(user) ? 'Admin panel' : 'My account';
     account.href = isStaff(user) ? '/admin' : '/account';
+  }
+  const navMsgs = document.getElementById('navMessages');
+  const menuMsgs = document.getElementById('navMenuMessages');
+  if (navMsgs) {
+    navMsgs.textContent = isStaff(user) ? 'Messages' : 'Message Admin';
+    navMsgs.href = isStaff(user) ? '/admin#messages' : '/messages';
+  }
+  if (menuMsgs && user) {
+    menuMsgs.textContent = isStaff(user) ? 'Messages inbox' : 'Message Admin';
+    menuMsgs.href = isStaff(user) ? '/admin#messages' : '/messages';
   }
   const unread = document.getElementById('navUnread');
   if (unread) {

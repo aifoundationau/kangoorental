@@ -20,11 +20,12 @@
         <h2>2. AI systems we use</h2>
         <h3>Driver licence verification</h3>
         <ul>
-          <li><strong>What it does:</strong> reads the photo of the front of your licence (name, date of birth, licence number, expiry, state,
-            licence type) and checks it matches the details you entered. It also flags photos that are unclear or look altered.</li>
-          <li><strong>Model and provider:</strong> Claude, a large language model by Anthropic, accessed through Anthropic's commercial API.</li>
-          <li><strong>Data:</strong> only the licence photo and a fixed set of instructions are sent. The photo is held in memory, sent once,
-            and then discarded. <strong>We never store the image.</strong> We keep the extracted licence details and the outcome.</li>
+          <li><strong>What it does:</strong> reads the photos of the <strong>front and back</strong> of your driver licence (name, date of birth,
+            licence number, card number, issuing state &amp; authority, licence type, vehicle classes, conditions/restrictions, issue &amp; expiry dates,
+            front address, back address sticker, endorsements, and 2D barcode) and checks them against what you entered. It also flags photos that are unclear, show an automatic-only restriction for our 6-speed manual van, or look altered.</li>
+          <li><strong>Model and provider:</strong> Google Gemini via the official Google GenAI SDK (<code>@google/genai</code>).</li>
+          <li><strong>Data:</strong> only the front and back licence photos and fixed inspection instructions are sent. Images are held in server memory, sent once,
+            and immediately discarded. <strong>We never store the raw images.</strong> We store the extracted structured licence information on your customer profile in our database so the Superadmin can inspect and verify profiles in the Admin panel.</li>
           <li><strong>Consent:</strong> you agree to this check when you register. If you'd rather not use it, contact us and we'll arrange a manual check.</li>
         </ul>
 

@@ -23,11 +23,8 @@
           <li><strong>Messages</strong> you send us through your account, and <strong>security logs</strong> (such as sign-in times and IP addresses).</li>
         </ul>
 
-        <h2>2. Your licence photo is not stored</h2>
-        <p>When you upload a photo of your licence, it is held in our server's memory only. It is sent once to our AI provider to read
-          the details and compare them with what you entered, and then discarded. <strong>We never save the image</strong> to disk, to
-          our database or to backups. We keep only the licence details listed above and whether the check passed.
-          See our <a href="/ai-policy">AI Policy</a> for how this check works.</p>
+        <h2>2. Your licence photos are processed in memory and extracted details are stored</h2>
+        <p>When you upload photos of the <strong>front and back</strong> of your driver licence, they are held in our server's memory only and sent once to Google Gemini AI to extract all printed licence details (such as name, DOB, licence number, card number, authority, classes, conditions, issue/expiry dates, addresses, and security checks) and compare them with what you entered. The image buffers are then discarded immediately — <strong>we never save raw photos</strong> to disk or backups. We store the extracted structured licence information on your customer profile in our database so our Superadmin and Admin team can verify eligibility and view customer profiles in the Admin panel. See our <a href="/ai-policy">AI Policy</a> for how this check works.</p>
 
         <h2>3. Why we collect it</h2>
         <ul>
@@ -43,7 +40,7 @@
         <p>We use trusted service providers to run the service. They may store or process information outside Australia:</p>
         <ul>
           <li><strong>Google Cloud (Firestore)</strong> stores our customer database in the United States (nam5 multi-region).</li>
-          <li><strong>Anthropic</strong> provides the AI model that reads your licence photo. Processing takes place in the United States.</li>
+          <li><strong>Google Gemini API</strong> reads uploaded front and back driver licence photos in memory to extract structured licence fields. Processing may take place in the United States.</li>
           <li><strong>Stripe</strong> processes AUD booking payments (United States and other countries).</li>
           <li><strong>OpenStreetMap (Nominatim)</strong> and <strong>Open-Meteo</strong> receive location coordinates, rounded to about 100 m and
             without your name or account details, to look up your suburb and local weather for the location panel.</li>
@@ -53,8 +50,7 @@
           We may also disclose information where the law requires it, for example to police or a road authority.</p>
 
         <h2>5. How long we keep it</h2>
-        <p>We keep account details while your account is open. Booking and payment records are kept for at least five years to meet
-          Australian tax law. When you delete your account, we remove your personal details and keep only the anonymised records we're required to retain.</p>
+        <p>We keep account details while your account is open. <strong>All messages exchanged between customers and our admin team are stored for 7 years</strong>, including after an account is deleted by a superadmin (with profile details anonymised). Booking and payment records are kept for at least five years (and 7 years where linked to financial ledgers) to meet Australian tax law. When a superadmin deletes an account upon request, we remove personal profile details and keep only the archived messages and anonymised records we're required to retain.</p>
 
         <h2>6. Security</h2>
         <p>We protect your information with encryption in transit and at rest, hashed passwords, role-based staff access and audit logging.
@@ -62,7 +58,7 @@
           the Office of the Australian Information Commissioner (OAIC) under the Notifiable Data Breaches scheme.</p>
 
         <h2>7. Access, correction and deletion</h2>
-        <p>You can see and update most of your details in your account, and delete your account at any time. To access or correct other
+        <p>You can see and update most of your details in your account. Accounts cannot be self-deleted; account deletion is carried out exclusively by a superadmin upon request (message admin from your account or contact us {{contact_email}}). To access or correct other
           information, contact us {{contact_email}}. We'll respond within 30 days.</p>
 
         <h2>8. Complaints</h2>

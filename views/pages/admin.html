@@ -13,10 +13,10 @@
 
         <div class="panel">
           <nav class="tabs" role="tablist" aria-label="Admin sections">
-            <button role="tab" data-tab="dashboard" aria-selected="true">Dashboard</button>
+            <button role="tab" data-tab="messages" aria-selected="true" data-testid="tab-messages" data-agent-id="tab-messages">Messages <span class="badge" id="tabUnread" hidden></span></button>
+            <button role="tab" data-tab="dashboard" data-testid="tab-dashboard" data-agent-id="tab-dashboard">Dashboard</button>
             <button role="tab" data-tab="bookings">Bookings</button>
             <button role="tab" data-tab="customers">Customers</button>
-            <button role="tab" data-tab="messages">Messages <span class="badge" id="tabUnread" hidden></span></button>
             <button role="tab" data-tab="handover" data-super>Block out dates</button>
             <button role="tab" data-tab="pricing">Pricing (AUD)</button>
             <button role="tab" data-tab="ledger" data-testid="tab-ledger" data-agent-id="tab-ledger">Distribution ledger</button>
@@ -25,8 +25,25 @@
             <button role="tab" data-tab="audit">Audit log</button>
           </nav>
 
+          <!-- Messages -->
+          <div class="tab-panel" data-panel="messages" role="tabpanel">
+            <p class="hint" id="adminMsgRetention" data-testid="admin-msg-retention">All customer and admin messages are stored securely for <strong>7 years</strong> (including archived threads from deleted accounts).</p>
+            <div class="inbox">
+              <ul class="thread-list" id="threads"></ul>
+              <div class="thread-view">
+                <h3 id="threadTitle">Select a conversation</h3>
+                <div class="chat" id="adminChat"></div>
+                <form class="chat-form" id="adminChatForm" hidden>
+                  <label class="sr-only" for="adminChatInput">Reply</label>
+                  <textarea id="adminChatInput" rows="2" maxlength="2000" placeholder="Reply to customer…" data-testid="admin-chat-input" data-agent-id="admin-chat-input" required></textarea>
+                  <button class="btn" type="submit" data-testid="admin-chat-send-btn" data-agent-id="admin-chat-send-btn">Send</button>
+                </form>
+              </div>
+            </div>
+          </div>
+
           <!-- Dashboard -->
-          <div class="tab-panel" data-panel="dashboard" role="tabpanel">
+          <div class="tab-panel" data-panel="dashboard" role="tabpanel" hidden>
             <div class="stats" id="stats"></div>
             <h2 class="mt">Upcoming pickups</h2>
             <div id="upcoming"></div>
@@ -52,8 +69,19 @@
           <div class="tab-panel" data-panel="customers" role="tabpanel" hidden>
             <form class="toolbar" id="custSearch">
               <label class="sr-only" for="custQ">Search customers</label>
-              <input id="custQ" type="search" placeholder="Search name, email or licence number">
-              <button class="btn btn-small" type="submit">Search</button>
+              <input id="custQ" type="search" placeholder="Search name, email, phone, suburb, licence or card #" data-testid="cust-search-input" data-agent-id="cust-search-input">
+              <label class="sr-only" for="custStatus">Filter customer status</label>
+              <select id="custStatus" data-testid="cust-status-filter" data-agent-id="cust-status-filter">
+                <option value="">All profiles</option>
+                <option value="pending">Needs review</option>
+                <option value="verified">Verified</option>
+                <option value="rejected">Rejected</option>
+                <option value="unverified">Not checked</option>
+                <option value="disabled">Disabled</option>
+                <option value="deleted" data-super>Deleted</option>
+              </select>
+              <button class="btn btn-small" type="submit" data-testid="cust-search-btn" data-agent-id="cust-search-btn">Search</button>
+              <span class="hint" id="custCount" data-testid="cust-count"></span>
             </form>
             <div class="split">
               <div class="table-wrap" id="custTable"></div>
@@ -61,26 +89,10 @@
             </div>
           </div>
 
-          <!-- Messages -->
-          <div class="tab-panel" data-panel="messages" role="tabpanel" hidden>
-            <div class="inbox">
-              <ul class="thread-list" id="threads"></ul>
-              <div class="thread-view">
-                <h3 id="threadTitle">Select a conversation</h3>
-                <div class="chat" id="adminChat"></div>
-                <form class="chat-form" id="adminChatForm" hidden>
-                  <label class="sr-only" for="adminChatInput">Reply</label>
-                  <textarea id="adminChatInput" rows="2" maxlength="2000" placeholder="Reply to customer…" required></textarea>
-                  <button class="btn" type="submit">Send</button>
-                </form>
-              </div>
-            </div>
-          </div>
-
           <!-- Block out dates -->
           <div class="tab-panel" data-panel="handover" role="tabpanel" hidden>
             <h2>Block out dates</h2>
-            <p class="hint">Select the dates the car cannot be picked up or dropped off (e.g. days you work). Customers can still have the van out on hire across these days. Every click autosaves immediately.</p>
+            <p class="hint">Standard online pickups &amp; drop-offs default to Monday&ndash;Friday. Saturday and Sunday require customers to message admin first (toggle a specific weekend date on below to permit an online booking). Every click autosaves immediately.</p>
             <p class="hint" id="hoReadonly" hidden>Only the superadmin can change block out dates.</p>
 
             <h3>Usually available</h3>
@@ -147,6 +159,10 @@
                 <div class="field"><label for="s_first_pickup_hour">First pickup hour (0–23)</label><input id="s_first_pickup_hour" data-key="first_pickup_hour" type="number"></div>
                 <div class="field"><label for="s_last_pickup_hour">Last pickup hour (0–23)</label><input id="s_last_pickup_hour" data-key="last_pickup_hour" type="number"></div>
                 <div class="field"><label for="s_buffer_hours">Turnaround buffer (hours)</label><input id="s_buffer_hours" data-key="buffer_hours" type="number"></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label for="s_first_return_hour">First drop-off hour (0–23)</label><input id="s_first_return_hour" data-key="first_return_hour" type="number"></div>
+                <div class="field"><label for="s_last_return_hour">Last drop-off hour (0–23)</label><input id="s_last_return_hour" data-key="last_return_hour" type="number"></div>
               </div>
               <div class="field-row three">
                 <div class="field"><label for="s_min_notice_hours">Minimum notice (hours)</label><input id="s_min_notice_hours" data-key="min_notice_hours" type="number"></div>

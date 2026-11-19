@@ -87,12 +87,18 @@
                 <input id="licenceExpiry" name="licenceExpiry" type="date" required>
               </div>
             </div>
-            <div class="field">
-              <label for="licence">Photo of the front of your licence</label>
-              <input id="licence" name="licence" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required>
-              <p class="hint">JPEG, PNG or WebP. Lay the card flat in good light with all four corners showing.
-                <strong>We check the photo against your details, then delete it. The image is never saved.</strong></p>
+            <div class="field-row">
+              <div class="field">
+                <label for="licence">Photo of the front of your licence</label>
+                <input id="licence" name="licence" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-testid="reg-licence-front" data-agent-id="reg-licence-front" required>
+              </div>
+              <div class="field">
+                <label for="licenceBack">Photo of the back of your licence</label>
+                <input id="licenceBack" name="licenceBack" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-testid="reg-licence-back" data-agent-id="reg-licence-back" required>
+              </div>
             </div>
+            <p class="hint">JPEG, PNG or WebP. Lay the card flat in good light with all four corners of both sides showing.
+              <strong>Google Gemini AI reads all front &amp; back licence details into your customer profile, then we delete the photos straight away.</strong></p>
             <label class="check">
               <input type="checkbox" name="acceptAi" value="true" required>
               <span>I agree to my licence photo being checked automatically by an AI system, as described in the

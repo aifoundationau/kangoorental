@@ -22,10 +22,10 @@ const LICENCE_CLASS = { verified: 'ok', pending: 'wait', rejected: 'bad', unveri
 /* ---------- Tabs ---------- */
 
 const loaders = {
+  messages: loadThreads,
   dashboard: loadDashboard,
   bookings: loadBookings,
   customers: () => loadCustomers(),
-  messages: loadThreads,
   handover: loadHandover,
   pricing: loadPricing,
   ledger: loadLedger,
@@ -36,7 +36,7 @@ const loaders = {
 
 function showTab(name) {
   if (name === 'calendar') name = 'handover';
-  if (!loaders[name]) name = 'dashboard';
+  if (!loaders[name]) name = 'messages';
   document.querySelectorAll('[role="tab"]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
   document.querySelectorAll('.tab-panel').forEach((p) => { p.hidden = p.dataset.panel !== name; });
   history.replaceState(null, '', `#${name}`);
@@ -51,10 +51,10 @@ async function loadDashboard() {
   const [s, { bookings }] = await Promise.all([api('/admin/stats'), api('/admin/bookings?status=confirmed')]);
   const tile = (label, value, tab) => `<button class="stat" data-goto="${tab}"><span>${label}</span><strong>${value}</strong></button>`;
   $('stats').innerHTML = [
+    tile('Unread messages', s.unreadMessages, 'messages'),
     tile('Upcoming bookings', s.upcomingBookings, 'bookings'),
     tile('Van out now', s.activeBookings, 'bookings'),
     tile('Licences to review', s.pendingLicences, 'customers'),
-    tile('Unread messages', s.unreadMessages, 'messages'),
     tile('Customers', s.customers, 'customers'),
     tile('Net revenue (30 days)', formatAud(s.revenueAudCents30d), 'audit'),
     tile('Distribution balance', s.settlement?.amountCents ? formatAud(s.settlement.amountCents) : 'Settled', 'ledger'),
@@ -112,52 +112,94 @@ async function changeBookingStatus(id, status) {
 
 /* ---------- Customers ---------- */
 
-async function loadCustomers(q = $('custQ').value) {
-  const { users } = await api(`/admin/users?q=${encodeURIComponent(q)}`);
+async function loadCustomers(q = $('custQ').value, status = $('custStatus')?.value || '') {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (status) params.set('status', status);
+  const { users, total } = await api(`/admin/users${params.toString() ? `?${params}` : ''}`);
+  const countEl = $('custCount');
+  if (countEl) {
+    const n = total ?? users.length;
+    countEl.textContent = `Showing ${users.length}${n > users.length ? ` of ${n}` : ''} customer profile${n === 1 ? '' : 's'}`;
+  }
   $('custTable').innerHTML = users.length ? `<table class="table">
-    <thead><tr><th>Name</th><th>Contact</th><th>Licence</th><th>Joined</th></tr></thead>
-    <tbody>${users.map((u) => `<tr class="clickable${u.disabled ? ' muted' : ''}" data-customer="${u.id}">
-      <td><strong>${escapeHtml(u.fullName)}</strong>${u.disabled ? ' <small>(disabled)</small>' : ''}</td>
-      <td>${escapeHtml(u.email)}<br><small>${escapeHtml(u.phone || '')}</small></td>
-      <td><span class="status-pill ${LICENCE_CLASS[u.licenceStatus]}">${LICENCE_LABEL[u.licenceStatus]}</span></td>
+    <thead><tr><th>Customer</th><th>Contact &amp; Suburb</th><th>Licence (Front &amp; Back)</th><th>Joined</th></tr></thead>
+    <tbody>${users.map((u) => `<tr class="clickable${u.disabled ? ' muted' : ''}" data-customer="${u.id}" data-testid="cust-row-${u.id}">
+      <td><strong>${escapeHtml(u.fullName)}</strong>${u.deletedAt ? ' <small>(deleted)</small>' : u.disabled ? ' <small>(disabled)</small>' : ''}<br><small class="hint">${u.googleLinked ? 'Google' : ''}${u.googleLinked && u.hasPassword ? ' · ' : ''}${u.hasPassword ? 'Password' : ''}</small></td>
+      <td>${escapeHtml(u.email)}<br><small>${escapeHtml([u.phone, [u.suburb, u.state].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</small></td>
+      <td><span class="status-pill ${LICENCE_CLASS[u.licenceStatus]}">${LICENCE_LABEL[u.licenceStatus]}</span><br><small>${escapeHtml([u.licenceNumber, u.licenceCardNumber ? `Card ${u.licenceCardNumber}` : '', u.licenceClass ? `Class ${u.licenceClass}` : ''].filter(Boolean).join(' · '))}</small></td>
       <td>${formatStamp(u.createdAt)}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">No customers found.</p>';
 }
 
 async function openCustomer(id) {
   const { user: u, bookings, payments } = await api(`/admin/users/${id}`);
+  const ext = u.licenceExtracted || null;
   const panel = $('custDetail');
   panel.hidden = false;
   panel.dataset.id = u.id;
+  const signInMethod = [u.googleLinked ? 'Google' : '', u.hasPassword ? 'Email & password' : ''].filter(Boolean).join(' + ') || '–';
+  const sidesText = u.licenceFrontProvided && u.licenceBackProvided ? 'Front & back uploaded'
+    : u.licenceFrontProvided ? 'Front only uploaded' : 'Not yet uploaded';
+  const secFeatures = ext?.securityFeatures?.length ? ext.securityFeatures.map(escapeHtml).join(', ') : '–';
+  const tamperText = ext
+    ? (ext.tamperingSuspected
+      ? `<strong class="neg">Flagged</strong>${ext.tamperingIndicators?.length ? `: ${ext.tamperingIndicators.map(escapeHtml).join(', ')}` : ''}`
+      : 'None detected')
+    : '–';
   panel.innerHTML = `
     <button class="icon-btn close" type="button" data-close aria-label="Close">×</button>
-    <h3>${escapeHtml(u.fullName)}</h3>
+    <h3>${escapeHtml(u.fullName)}${u.deletedAt ? ' <small>(deleted)</small>' : ''}</h3>
     <dl class="details">
       <div><dt>Email</dt><dd>${escapeHtml(u.email)}</dd></div>
       <div><dt>Mobile</dt><dd>${escapeHtml(u.phone || '–')}</dd></div>
       <div><dt>Date of birth</dt><dd>${escapeHtml(u.dob || '–')}</dd></div>
-      <div><dt>Address</dt><dd>${escapeHtml([u.addressLine, u.suburb, u.state, u.postcode].filter(Boolean).join(', '))}</dd></div>
+      <div><dt>Residential address</dt><dd>${escapeHtml([u.addressLine, u.suburb, u.state, u.postcode].filter(Boolean).join(', ') || '–')}</dd></div>
+      <div><dt>Sign-in method</dt><dd>${escapeHtml(signInMethod)}</dd></div>
       <div><dt>Registered from</dt><dd>${u.regDistanceKm ?? '–'} km from depot</dd></div>
+      <div><dt>Joined</dt><dd>${formatStamp(u.createdAt) || '–'}</dd></div>
+      ${u.acceptedTermsAt ? `<div><dt>Terms / AI consent</dt><dd>${formatStamp(u.acceptedTermsAt)}</dd></div>` : ''}
     </dl>
-    <h4>Licence <span class="status-pill ${LICENCE_CLASS[u.licenceStatus]}">${LICENCE_LABEL[u.licenceStatus]}</span></h4>
+    <h4>Driver Licence (Front &amp; Back) <span class="status-pill ${LICENCE_CLASS[u.licenceStatus]}">${LICENCE_LABEL[u.licenceStatus]}</span></h4>
+    ${(u.licenceBriefDescription || ext?.briefDescription) ? `<p class="notice">${escapeHtml(u.licenceBriefDescription || ext.briefDescription)}</p>` : ''}
     <dl class="details">
-      <div><dt>Number</dt><dd>${escapeHtml(u.licenceNumber || '–')} (${escapeHtml(u.licenceState || '')})</dd></div>
-      <div><dt>Expiry</dt><dd>${escapeHtml(u.licenceExpiry || '–')}</dd></div>
-      <div><dt>Class</dt><dd>${escapeHtml(u.licenceClass || '–')}</dd></div>
-      <div><dt>Checked</dt><dd>${u.licenceMethod === 'ai' ? 'Automatically' : u.licenceMethod === 'manual' ? 'By staff' : '–'} ${formatStamp(u.licenceCheckedAt)}</dd></div>
+      <div><dt>Licence number</dt><dd>${escapeHtml(u.licenceNumber || '–')} (${escapeHtml(u.licenceState || '–')})</dd></div>
+      <div><dt>Card number</dt><dd>${escapeHtml(u.licenceCardNumber || ext?.cardNumber || '–')}</dd></div>
+      <div><dt>Licence type</dt><dd>${escapeHtml(u.licenceType || ext?.licenceType || '–')}</dd></div>
+      <div><dt>Vehicle class</dt><dd>${escapeHtml(u.licenceClass || ext?.licenceClass || '–')}</dd></div>
+      <div><dt>Issue date</dt><dd>${escapeHtml(u.licenceIssueDate || ext?.issueDate || '–')}</dd></div>
+      <div><dt>Expiry date</dt><dd>${escapeHtml(u.licenceExpiry || ext?.expiryDate || '–')}</dd></div>
+      <div><dt>Issuing authority</dt><dd>${escapeHtml(u.licenceAuthority || ext?.issuingAuthority || '–')}</dd></div>
+      <div><dt>Conditions</dt><dd>${escapeHtml(u.licenceConditions || ext?.conditions || 'None noted')}${ext?.automaticOnly ? ' <strong class="neg">(Automatic only — manual restriction)</strong>' : ''}</dd></div>
+      <div><dt>Address on front</dt><dd>${escapeHtml(u.licenceAddressFront || ext?.addressFront || '–')}</dd></div>
+      <div><dt>Address on back</dt><dd>${escapeHtml(u.licenceAddressBack || ext?.addressBack || '–')}</dd></div>
+      <div><dt>Uploads</dt><dd>${sidesText}</dd></div>
+      <div><dt>Checked</dt><dd>${u.licenceMethod === 'ai' ? `Google Gemini AI${ext?.model ? ` (${escapeHtml(ext.model)})` : ''}` : u.licenceMethod === 'manual' ? 'By staff' : '–'} ${formatStamp(u.licenceCheckedAt)}</dd></div>
+      ${ext ? `<div><dt>Back 2D barcode</dt><dd>${ext.hasBarcode ? 'Detected' : 'Not detected'}</dd></div>
+      <div><dt>Security features</dt><dd>${secFeatures}</dd></div>
+      <div><dt>Forensic check</dt><dd>${tamperText}</dd></div>` : ''}
     </dl>
-    ${u.licenceNotes ? `<p class="hint">${escapeHtml(u.licenceNotes)}</p>` : ''}
-    <p class="hint">The licence photo is never stored. To verify manually, sight the physical licence (for example at pickup or by video call) and check it matches the details above.</p>
-    <div class="btn-row">
+    ${ext?.backTextSummary ? `<p class="hint"><strong>Back details:</strong> ${escapeHtml(ext.backTextSummary)}</p>` : ''}
+    ${u.licenceNotes ? `<p class="hint"><strong>Verification status:</strong> ${escapeHtml(u.licenceNotes)}</p>` : ''}
+    <p class="hint">Raw licence photos are processed in memory by Google Gemini AI and discarded immediately after extraction.</p>
+    ${u.deletedAt ? '' : `<div class="btn-row">
       <button class="btn btn-small" data-licence="verified">Mark verified</button>
       <button class="btn btn-small btn-ghost" data-licence="rejected">Reject</button>
-    </div>
+    </div>`}
     <h4>Insurance</h4>
     <p>${u.insurer ? `${escapeHtml(u.insurer)} &middot; policy ${escapeHtml(u.policyNumber)} &middot; expires ${escapeHtml(u.policyExpiry)}<br>
       $2M indemnity ${u.indemnityConfirmed ? 'confirmed by customer' : '<strong>not confirmed</strong>'}` : '<span class="hint">Not provided</span>'}</p>
-    <div class="btn-row">
+    ${u.deletedAt
+      ? `<p class="hint" data-testid="cust-deleted-notice">Account deleted ${formatStamp(u.deletedAt)}. Message history is archived for 7-year retention.</p>
+         <div class="btn-row"><button class="btn btn-small btn-ghost" data-message="${u.id}">View archived messages</button></div>`
+      : `<div class="btn-row">
       <button class="btn btn-small btn-ghost" data-message="${u.id}">Message customer</button>
       <button class="btn btn-small ${u.disabled ? '' : 'btn-danger'}" data-disable="${u.disabled ? 'false' : 'true'}">${u.disabled ? 'Re-enable account' : 'Disable account'}</button>
-    </div>
+      ${superadmin ? `<button class="btn btn-small btn-danger" type="button" data-cust-del-start="${u.id}" data-testid="cust-delete-start" data-agent-id="cust-delete-start">Delete account</button>
+      <span class="inline-confirm" data-cust-del-box="${u.id}" hidden>
+        <button class="btn btn-small btn-danger" type="button" data-cust-del-confirm="${u.id}" data-testid="cust-delete-confirm" data-agent-id="cust-delete-confirm">Confirm delete</button>
+        <button class="btn btn-small btn-ghost" type="button" data-cust-del-cancel="${u.id}" data-testid="cust-delete-cancel" data-agent-id="cust-delete-cancel">Cancel</button>
+      </span>` : ''}
+    </div>`}
     <h4>Bookings</h4>
     ${bookings.length ? `<ul class="mini-list">${bookings.map((b) => `<li><strong>${escapeHtml(b.ref)}</strong> ${formatDateTime(b.startAt)} &middot; ${b.days}d &middot; ${formatAud(b.totalCents)} &middot; ${STATUS_LABEL[b.status] || escapeHtml(b.status)}</li>`).join('')}</ul>` : '<p class="hint">None.</p>'}
     <h4>Payment history (AUD)</h4>
@@ -181,8 +223,10 @@ async function loadThreads() {
 
 async function openThread(userId, quiet = false) {
   currentThread = userId;
-  const { user, messages } = await api(`/admin/threads/${userId}`);
-  $('threadTitle').textContent = `${user.fullName} · ${user.email}`;
+  const { user, messages, archived } = await api(`/admin/threads/${userId}`);
+  $('threadTitle').textContent = archived
+    ? `${user.fullName} (archived · 7-year retention)`
+    : `${user.fullName} · ${user.email}`;
   const chat = $('adminChat');
   const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
   chat.innerHTML = messages.length ? messages.map((m) => `
@@ -190,7 +234,7 @@ async function openThread(userId, quiet = false) {
       <p>${escapeHtml(m.body)}</p><time>${formatStamp(m.createdAt)}</time></div>`).join('')
     : '<p class="hint">No messages yet. Start the conversation below.</p>';
   if (!quiet || atBottom) chat.scrollTop = chat.scrollHeight;
-  $('adminChatForm').hidden = false;
+  $('adminChatForm').hidden = Boolean(archived);
   if (!quiet) loadThreads();
 }
 
@@ -550,7 +594,14 @@ async function loadStaff() {
     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
     <tbody>${staff.map((s) => `<tr class="${s.disabled ? 'muted' : ''}"><td>${escapeHtml(s.fullName)}</td><td>${escapeHtml(s.email)}</td>
       <td>${s.role === 'superadmin' ? 'Superadmin' : 'Admin'}</td><td>${s.disabled ? 'Disabled' : 'Active'}</td>
-      <td>${s.id === me.id ? '<span class="hint">You</span>' : `<button class="btn btn-small btn-ghost" data-staff="${s.id}" data-disable="${!s.disabled}">${s.disabled ? 'Enable' : 'Disable'}</button>`}</td></tr>`).join('')}
+      <td>${s.id === me.id ? '<span class="hint">You</span>' : `<div class="btn-row">
+        <button class="btn btn-small btn-ghost" data-staff="${s.id}" data-disable="${!s.disabled}">${s.disabled ? 'Enable' : 'Disable'}</button>
+        <button class="btn btn-small btn-danger" type="button" data-staff-del-start="${s.id}" data-testid="staff-delete-start-${s.id}" data-agent-id="staff-delete-start-${s.id}">Delete</button>
+        <span class="inline-confirm" data-staff-del-box="${s.id}" hidden>
+          <button class="btn btn-small btn-danger" type="button" data-staff-del-confirm="${s.id}" data-testid="staff-delete-confirm-${s.id}" data-agent-id="staff-delete-confirm-${s.id}">Confirm delete</button>
+          <button class="btn btn-small btn-ghost" type="button" data-staff-del-cancel="${s.id}" data-testid="staff-delete-cancel-${s.id}" data-agent-id="staff-delete-cancel-${s.id}">Cancel</button>
+        </span>
+      </div>`}</td></tr>`).join('')}
     </tbody></table>`;
 }
 
@@ -566,6 +617,13 @@ async function loadAudit() {
 }
 
 /* ---------- Events ---------- */
+
+function toggleInlineConfirm(prefix, id, show) {
+  const start = document.querySelector(`[data-${prefix}-start="${CSS.escape(id)}"]`);
+  const box = document.querySelector(`[data-${prefix}-box="${CSS.escape(id)}"]`);
+  if (start) start.hidden = show;
+  if (box) box.hidden = !show;
+}
 
 function bindEvents() {
   document.querySelector('.tabs').addEventListener('click', (e) => {
@@ -627,24 +685,40 @@ function bindEvents() {
         return loadStaff();
       }
 
-      const lDelStart = t.closest('[data-ledger-del-start]');
-      if (lDelStart) {
-        const id = lDelStart.dataset.ledgerDelStart;
-        lDelStart.hidden = true;
-        const box = document.querySelector(`[data-ledger-del-box="${id}"]`);
-        if (box) box.hidden = false;
-        return;
+      const custDelStart = t.closest('[data-cust-del-start]');
+      if (custDelStart) { toggleInlineConfirm('cust-del', custDelStart.dataset.custDelStart, true); return; }
+
+      const custDelCancel = t.closest('[data-cust-del-cancel]');
+      if (custDelCancel) { toggleInlineConfirm('cust-del', custDelCancel.dataset.custDelCancel, false); return; }
+
+      const custDelConfirm = t.closest('[data-cust-del-confirm]');
+      if (custDelConfirm) {
+        const id = custDelConfirm.dataset.custDelConfirm;
+        await api(`/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        toast('Account deleted and message history archived for 7 years.', 'success');
+        await openCustomer(id);
+        return loadCustomers();
       }
 
-      const lDelCancel = t.closest('[data-ledger-del-cancel]');
-      if (lDelCancel) {
-        const id = lDelCancel.dataset.ledgerDelCancel;
-        const box = document.querySelector(`[data-ledger-del-box="${id}"]`);
-        const start = document.querySelector(`[data-ledger-del-start="${id}"]`);
-        if (box) box.hidden = true;
-        if (start) start.hidden = false;
-        return;
+      const staffDelStart = t.closest('[data-staff-del-start]');
+      if (staffDelStart) { toggleInlineConfirm('staff-del', staffDelStart.dataset.staffDelStart, true); return; }
+
+      const staffDelCancel = t.closest('[data-staff-del-cancel]');
+      if (staffDelCancel) { toggleInlineConfirm('staff-del', staffDelCancel.dataset.staffDelCancel, false); return; }
+
+      const staffDelConfirm = t.closest('[data-staff-del-confirm]');
+      if (staffDelConfirm) {
+        const id = staffDelConfirm.dataset.staffDelConfirm;
+        await api(`/admin/staff/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        toast('Staff account deleted.', 'success');
+        return loadStaff();
       }
+
+      const lDelStart = t.closest('[data-ledger-del-start]');
+      if (lDelStart) { toggleInlineConfirm('ledger-del', lDelStart.dataset.ledgerDelStart, true); return; }
+
+      const lDelCancel = t.closest('[data-ledger-del-cancel]');
+      if (lDelCancel) { toggleInlineConfirm('ledger-del', lDelCancel.dataset.ledgerDelCancel, false); return; }
 
       const lDelConfirm = t.closest('[data-ledger-del-confirm]');
       if (lDelConfirm) {
@@ -667,6 +741,7 @@ function bindEvents() {
 
   $('bkFilter').addEventListener('change', () => loadBookings());
   $('custSearch').addEventListener('submit', (e) => { e.preventDefault(); loadCustomers(); });
+  $('custStatus')?.addEventListener('change', () => loadCustomers());
 
   $('adminChatForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -852,6 +927,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('[data-super]').forEach((el) => { el.hidden = !superadmin; });
   bindEvents();
   bindHandover();
-  showTab(location.hash.slice(1) || 'dashboard');
+  showTab(location.hash.slice(1) || 'messages');
   window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 });

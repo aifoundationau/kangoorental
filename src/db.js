@@ -1,4 +1,4 @@
-import { Firestore, FieldValue } from '@google-cloud/firestore';
+import { Firestore, FieldValue, Timestamp } from '@google-cloud/firestore';
 import { config, DEFAULT_SETTINGS } from './config.js';
 
 // All data lives in a named Firestore database. Only this server talks to it; browsers never do.
@@ -40,7 +40,7 @@ export const col = {
   locks: firestore.collection('locks'),
 };
 
-export { FieldValue };
+export { FieldValue, Timestamp };
 
 export const nowIso = () => new Date().toISOString();
 export const docData = (snap) => (snap.exists ? { id: snap.id, ...snap.data() } : null);

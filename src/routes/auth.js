@@ -20,8 +20,12 @@ export const router = Router();
 // Licence photos stay in memory and are never written to disk or the database.
 export const licenceUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: config.maxLicenceBytes, files: 1, fields: 40 },
+  limits: { fileSize: config.maxLicenceBytes, files: 2, fields: 40 },
 });
+export const licencePhotoFields = licenceUpload.fields([
+  { name: 'licence', maxCount: 1 },
+  { name: 'licenceBack', maxCount: 1 },
+]);
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 const registerLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 6 });
@@ -40,9 +44,19 @@ export function publicUser(u, extra = {}) {
     state: u.state,
     postcode: u.postcode,
     licenceNumber: u.licenceNumber,
+    licenceCardNumber: u.licenceCardNumber || '',
     licenceState: u.licenceState,
+    licenceAuthority: u.licenceAuthority || '',
+    licenceType: u.licenceType || '',
     licenceExpiry: u.licenceExpiry,
+    licenceIssueDate: u.licenceIssueDate || '',
     licenceClass: u.licenceClass,
+    licenceConditions: u.licenceConditions || '',
+    licenceAddressFront: u.licenceAddressFront || '',
+    licenceAddressBack: u.licenceAddressBack || '',
+    licenceBriefDescription: u.licenceBriefDescription || '',
+    licenceFrontProvided: Boolean(u.licenceFrontProvided),
+    licenceBackProvided: Boolean(u.licenceBackProvided),
     licenceStatus: u.licenceStatus,
     licenceNotes: u.licenceNotes,
     licenceCheckedAt: u.licenceCheckedAt,
@@ -84,25 +98,74 @@ export function readLicenceFields(body) {
   };
 }
 
-export async function runLicenceCheck(userId, file, person, ip) {
-  if (!file) throw new HttpError(400, 'Please upload a photo of the front of your driver licence.');
+export async function runLicenceCheck(userId, files, person, ip) {
+  const front = files?.front || (files?.buffer ? files : null);
+  const back = files?.back || null;
+  if (!front) throw new HttpError(400, 'Please upload a photo of the front of your driver licence.');
+  if (!back) throw new HttpError(400, 'Please upload a photo of the back of your driver licence.');
   let result;
   try {
-    result = await verifyLicence(file.buffer, person);
+    result = await verifyLicence(front.buffer, back.buffer, person);
   } finally {
-    // Drop our reference to the image as soon as the check is done.
-    file.buffer = null;
+    // Drop references to the images as soon as the check is done.
+    if (front) front.buffer = null;
+    if (back) back.buffer = null;
   }
   const x = result.extracted;
+  const checkedAt = nowIso();
+  const strOr = (v) => (typeof v === 'string' ? v.trim() : '');
+  const extractedFields = x ? {
+    ...(strOr(x.card_number) ? { licenceCardNumber: strOr(x.card_number) } : {}),
+    ...(strOr(x.issuing_authority) ? { licenceAuthority: strOr(x.issuing_authority) } : {}),
+    ...(strOr(x.licence_type) && x.licence_type !== 'unknown' ? { licenceType: strOr(x.licence_type) } : {}),
+    ...(strOr(x.licence_class) ? { licenceClass: strOr(x.licence_class) } : {}),
+    ...(strOr(x.conditions) ? { licenceConditions: strOr(x.conditions) } : {}),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(strOr(x.issue_date)) ? { licenceIssueDate: strOr(x.issue_date) } : {}),
+    ...(strOr(x.address_front) ? { licenceAddressFront: strOr(x.address_front) } : {}),
+    ...(strOr(x.address_back) ? { licenceAddressBack: strOr(x.address_back) } : {}),
+    ...(strOr(x.brief_description) ? { licenceBriefDescription: strOr(x.brief_description) } : {}),
+    ...(result.status === 'verified' && /^\d{4}-\d{2}-\d{2}$/.test(strOr(x.expiry_date)) ? { licenceExpiry: strOr(x.expiry_date) } : {}),
+    ...(!person.dob && /^\d{4}-\d{2}-\d{2}$/.test(strOr(x.date_of_birth)) ? { dob: strOr(x.date_of_birth) } : {}),
+    licenceExtracted: {
+      isDriversLicence: Boolean(x.is_drivers_licence),
+      backImageValid: Boolean(x.back_image_valid),
+      imageQualityOk: Boolean(x.image_quality_ok),
+      tamperingSuspected: Boolean(x.tampering_suspected),
+      tamperingIndicators: Array.isArray(x.tampering_indicators) ? x.tampering_indicators.map(strOr).filter(Boolean) : [],
+      fullName: strOr(x.full_name),
+      dateOfBirth: strOr(x.date_of_birth),
+      licenceNumber: strOr(x.licence_number),
+      cardNumber: strOr(x.card_number),
+      issuingState: strOr(x.issuing_state),
+      issuingAuthority: strOr(x.issuing_authority),
+      licenceType: strOr(x.licence_type),
+      licenceClass: strOr(x.licence_class),
+      issueDate: strOr(x.issue_date),
+      expiryDate: strOr(x.expiry_date),
+      addressFront: strOr(x.address_front),
+      addressBack: strOr(x.address_back),
+      conditions: strOr(x.conditions),
+      automaticOnly: Boolean(x.automatic_only),
+      hasBarcode: Boolean(x.has_barcode),
+      securityFeatures: Array.isArray(x.security_features) ? x.security_features.map(strOr).filter(Boolean) : [],
+      backTextSummary: strOr(x.back_text_summary),
+      briefDescription: strOr(x.brief_description),
+      aiNotes: strOr(x.notes),
+      extractedAt: checkedAt,
+      model: result.model || null,
+    },
+  } : {};
+
   await col.users.doc(userId).update({
     licenceStatus: result.status,
     licenceMethod: result.method,
     licenceNotes: result.notes,
-    licenceCheckedAt: nowIso(),
-    ...(x?.licence_class ? { licenceClass: x.licence_class } : {}),
-    ...(result.status === 'verified' && x?.expiry_date ? { licenceExpiry: x.expiry_date } : {}),
+    licenceCheckedAt: checkedAt,
+    licenceFrontProvided: true,
+    licenceBackProvided: true,
+    ...extractedFields,
   });
-  audit(userId, 'licence.check', `${result.method}: ${result.status}`, ip);
+  audit(userId, 'licence.check', `${result.method}${result.model ? `(${result.model})` : ''}: ${result.status}`, ip);
   return result;
 }
 
@@ -135,7 +198,7 @@ router.post('/geo/check', rateLimit({ windowMs: 60 * 1000, max: 30 }), async (re
   res.json(checkServiceArea(req.body?.lat, req.body?.lng, await getSettings()));
 });
 
-router.post('/auth/register', registerLimiter, licenceUpload.single('licence'), async (req, res) => {
+router.post('/auth/register', registerLimiter, licencePhotoFields, async (req, res) => {
   const b = req.body || {};
   const settings = await getSettings();
 
@@ -162,7 +225,10 @@ router.post('/auth/register', registerLimiter, licenceUpload.single('licence'), 
   if (ageOn(dob, brisbaneToday()) < minAge) throw new HttpError(400, `Drivers must be at least ${minAge} years old.`);
   if (lic.licenceExpiry < brisbaneToday()) throw new HttpError(400, 'Your licence has expired.');
 
-  if (!req.file) throw new HttpError(400, 'Please upload a photo of the front of your driver licence.');
+  const frontFile = req.files?.licence?.[0];
+  const backFile = req.files?.licenceBack?.[0];
+  if (!frontFile) throw new HttpError(400, 'Please upload a photo of the front of your driver licence.');
+  if (!backFile) throw new HttpError(400, 'Please upload a photo of the back of your driver licence.');
 
   const userId = await createUser({
     email,
@@ -174,7 +240,7 @@ router.post('/auth/register', registerLimiter, licenceUpload.single('licence'), 
   });
   audit(userId, 'register', `${email}${google ? ' (Google)' : ''}`, req.ip);
 
-  const result = await runLicenceCheck(userId, req.file, { fullName, dob, ...lic }, req.ip);
+  const result = await runLicenceCheck(userId, { front: frontFile, back: backFile }, { fullName, dob, ...lic }, req.ip);
   const csrf = await createSession(res, userId);
   res.status(201).json({ user: publicUser(await getUser(userId)), csrf, licence: { status: result.status, notes: result.notes } });
 });

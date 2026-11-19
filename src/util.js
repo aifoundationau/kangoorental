@@ -47,6 +47,12 @@ export function isHandoverDay(rules, dateStr) {
   return rules.weekdays.includes(new Date(`${dateStr}T00:00:00Z`).getUTCDay());
 }
 
+/** True if a Brisbane YYYY-MM-DD date falls on Saturday (6) or Sunday (0). */
+export function isWeekend(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`).getUTCDay();
+  return d === 0 || d === 6;
+}
+
 export function ageOn(dobStr, onDateStr) {
   const [y, m, d] = dobStr.split('-').map(Number);
   const [ty, tm, td] = onDateStr.split('-').map(Number);

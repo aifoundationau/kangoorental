@@ -24,6 +24,35 @@ All API, UI, and SuperAdmin settings inputs are validated on the server with str
       "minimum": 0,
       "maximum": 5000,
       "description": "Australian GST in basis points (1000 = 10%)"
+    },
+    "first_pickup_hour": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23,
+      "description": "Start of standard pickup window in Brisbane/Arundel time (default: 9 = 9:00 AM)"
+    },
+    "last_pickup_hour": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23,
+      "description": "End of standard pickup window in Brisbane/Arundel time (default: 10 = 10:00 AM)"
+    },
+    "first_return_hour": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23,
+      "description": "Start of next-day / return-day drop-off window in Brisbane/Arundel time (default: 8 = 8:00 AM)"
+    },
+    "last_return_hour": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23,
+      "description": "End of next-day / return-day drop-off window in Brisbane/Arundel time (default: 9 = 9:00 AM)"
+    },
+    "handover_weekdays": {
+      "type": "string",
+      "pattern": "^([0-6](,[0-6])*)?$",
+      "description": "Comma-separated open handover weekdays 0=Sun..6=Sat (default: 1,2,3,4,5 Mon-Fri; Sat/Sun require messaging admin first)"
     }
   }
 }
@@ -80,6 +109,9 @@ All API, UI, and SuperAdmin settings inputs are validated on the server with str
   }
 }
 ```
+Server invariants for `POST /api/bookings`:
+- **Weekdays & weekend rule:** Standard online pickups and drop-offs operate **Monday–Friday** (`handover_weekdays: "1,2,3,4,5"`). Bookings attempting to pick up or drop off on **Saturday or Sunday** (without a SuperAdmin single-date override) are rejected (`400`) and direct the customer to message admin first.
+- **Handover hours:** Standard pickup is `first_pickup_hour..last_pickup_hour` (`09:00–10:00`), and `endAt` is scheduled on `addDays(date, days)` at `first_return_hour` (`08:00`, window `08:00–09:00`); pickup hours outside that window return `400` prompting customers to message admin for an earlier time.
 
 ## 4. Stripe Direct AUD Booking Checkout & Refund Contract (`src/payments.js`)
 
@@ -205,3 +237,38 @@ Server invariant: `fromContractor !== toContractor`.
 
 ### 7.4 Delete Manual Ledger Entry (`DELETE /api/admin/ledger/:id` — SuperAdmin only)
 - Only manual `ledgerEntries` documents (`cash_payment` or `distribution`) can be deleted; Stripe/demo `payments` booking records cannot be deleted.
+
+## 8. Customer–Admin In-App Messaging & 7-Year Retention Contract
+
+- **Direct Entry Route (`GET /messages`):**
+  - Unauthenticated guests → `302` `/login?next=%2Fmessages`
+  - Customers (any non-staff account, regardless of location or licence status) → `302` `/account?tab=messages#messages`
+  - Staff (`admin` / `superadmin`) → `302` `/admin#messages`
+- **Customer Message Send (`POST /api/messages`):**
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["body"],
+  "properties": {
+    "body": { "type": "string", "minLength": 1, "maxLength": 2000 }
+  }
+}
+```
+- **7-Year Retention Invariant (`threads/{userId}` & `threads/{userId}/messages/{msgId}`):**
+  - Every message and thread stores `retentionYears: 7`, `retainUntil` (ISO-8601 UTC timestamp `createdAt + 7 years`), and `retainUntilAt` (Firestore `Timestamp`).
+  - Both `GET /api/messages` and `GET /api/admin/threads/:userId` return `retentionYears: 7` and per-message `retainUntil`.
+  - **Account Deletion (Superadmin-only: `DELETE /api/admin/users/:id`, `DELETE /api/admin/staff/:id`; `POST /api/account/delete` returns `403`):** Nobody can self-delete their own account (including superadmins attempting to delete themselves via `DELETE /api/admin/staff/:id`, which returns `400`). Only a `superadmin` can delete a customer account (refused with `409` while the customer has active/confirmed/pending bookings) or another staff account via an inline Confirm-delete prompt in `/admin`. On customer deletion, personal profile fields are removed, Sessions are revoked, bookings are anonymised, and the thread header is anonymised (`fullName: "Deleted customer"`, `archivedAt` set), while all messages in `threads/{userId}/messages` are preserved for the full **7 years**. Archived threads remain readable via `GET /api/admin/threads/:userId` (`archived: true`) and become read-only (`POST` returns `409`).
+
+## 9. Front & Back Driver Licence Verification & Superadmin Customer Profiles
+
+- **Upload Endpoints (`POST /api/auth/register`, `POST /api/account/licence`):**
+  - Multipart form-data with **both** required JPEG/PNG/WebP image fields (`<= 4 MB` each, processed strictly in memory and zeroed in `finally`):
+    - `licence` (front of Australian driver licence)
+    - `licenceBack` (back of Australian driver licence)
+- **Gemini Extraction Schema (`LicenceSchema` via `@google/genai`, default `gemini-4-hydrogen` with fallback to `gemini-3.5-flash-lite`):**
+  - `additionalProperties: false`; extracts and stores on `users/{id}` (`licenceCardNumber`, `licenceAuthority`, `licenceType`, `licenceClass`, `licenceConditions`, `licenceIssueDate`, `licenceExpiry`, `licenceAddressFront`, `licenceAddressBack`, `licenceBriefDescription`, `licenceFrontProvided`, `licenceBackProvided`, plus full `licenceExtracted` forensic object including `automaticOnly`, `hasBarcode`, `securityFeatures`, `backTextSummary`, `tamperingSuspected`, `tamperingIndicators`, `extractedAt`, and `model`).
+  - Automatic-only licences (`automatic_only: true` / Condition A) trigger `pending` manual review because the Kangoo MAXI has a 6-speed manual transmission.
+- **Superadmin Profile Endpoints (`GET /api/admin/users`, `GET /api/admin/users/:id`):**
+  - Lists all non-staff customer profiles (active, disabled, and deleted/archived for `superadmin`; supports `?q=` search across name, email, phone, licence/card numbers, suburb/address and `?status=` filter).
+  - Returns full profile details, bookings, AUD payments, and `licenceExtracted` forensic payload for `superadmin`.

@@ -234,6 +234,7 @@ legend { font-weight: 700; padding: 0 .4rem; }
 .cal-day.nohandover.in-range { background: repeating-linear-gradient(135deg, #dbe6ff 0 6px, #c9d9fb 6px 11px); border-color: var(--blue); color: var(--blue-dark); }
 .booking-selection { background: var(--bg-alt); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem; }
 .selection-summary { font-size: 1.05rem; font-weight: 700; color: var(--ink); margin: .35rem 0 .25rem; }
+.handover-hours p { margin: .25rem 0 0; }
 .cal-note { margin: .85rem 0 0; padding: .55rem .75rem; border-radius: 9px; background: var(--wait-bg); color: var(--wait); font-size: .88rem; }
 .postcard:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 /* Admin "Pickup days" calendar */
@@ -283,30 +284,70 @@ legend { font-weight: 700; padding: 0 .4rem; }
 /* "Hire for longer and save" sits just above "Book the van". */
 .section-save { padding-bottom: 0; }
 .section-save + .section { padding-top: clamp(2rem, 4vw, 3rem); }
-.price-cards-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; margin: 0 0 .9rem; }
-.price-cards-head h2 { margin: 0; font-size: 1.25rem; }
+.price-cards-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .35rem 1rem; margin: 0 0 .85rem; }
+.price-cards-head h2 { margin: 0; font-size: clamp(1.15rem, 2.2vw, 1.35rem); }
 .price-cards-head .hint { margin: 0; }
-.price-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .9rem; }
-.postcard { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; padding: 1.05rem 1rem .95rem; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); font: inherit; color: var(--ink); text-align: left; cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.price-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr)); gap: .65rem; padding-top: .5rem; }
+.postcard { position: relative; width: 100%; min-width: 0; container-type: inline-size; display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; padding: .95rem .75rem .85rem; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); font: inherit; color: var(--ink); text-align: left; cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; }
 .postcard:hover { transform: translateY(-2px); border-color: #b9c8ee; }
 .postcard[aria-pressed="true"] { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue), var(--shadow); }
-.pc-days { font-size: .76rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
-.pc-price { margin-top: .3rem; font-size: 1.65rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.1; }
-.pc-sub { font-size: .8rem; color: var(--ink-2); }
-.pc-stamp { margin-top: .6rem; padding: .14rem .45rem; border: 1.5px dashed var(--ok); border-radius: 5px; background: var(--ok-bg); color: var(--ok); font-size: .72rem; font-weight: 800; transform: rotate(-2deg); }
+.pc-days { font-size: clamp(.68rem, 8.2cqi, .76rem); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+.pc-price { display: inline-flex; align-items: baseline; flex-wrap: nowrap; max-width: 100%; margin-top: .25rem; font-size: clamp(.95rem, 14cqi, 1.32rem); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1.1; white-space: nowrap; }
+.pc-cur { font-size: .58em; font-weight: 700; letter-spacing: .02em; color: var(--ink-2); margin-right: .08em; }
+.pc-sub { font-size: clamp(.7rem, 8.4cqi, .78rem); color: var(--ink-2); margin-bottom: .35rem; }
+.pc-stamp { margin-top: auto; padding: .16rem .4rem; max-width: 100%; border: 1.5px dashed var(--ok); border-radius: 5px; background: var(--ok-bg); color: var(--ok); font-size: clamp(.62rem, 8.2cqi, .72rem); font-weight: 800; line-height: 1.2; white-space: nowrap; transform: rotate(-1.5deg); transform-origin: left center; }
 .pc-stamp.plain { border-color: #c8cfdb; background: var(--bg-alt); color: var(--ink-2); transform: none; }
-.pc-ribbon { position: absolute; top: -.62rem; left: .85rem; padding: .1rem .5rem; border-radius: 999px; background: var(--blue); color: #fff; font-size: .68rem; font-weight: 800; letter-spacing: .02em; }
+.pc-ribbon { position: absolute; top: -.6rem; left: .7rem; padding: .1rem .48rem; border-radius: 999px; background: var(--blue); color: #fff; font-size: .66rem; font-weight: 800; letter-spacing: .02em; white-space: nowrap; max-width: calc(100% - 1.2rem); }
 .postcard.best { border-color: #b9c8ee; }
 .postcard.lit { background: #eef3ff; border-color: #c5d5fb; }
 .postcard[aria-checked="true"] { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue); background: #f3f7ff; }
-.day-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; }
-@media (max-width: 359px) { .day-cards { grid-template-columns: repeat(3, 1fr); } }
-.postcard.mini { gap: 0; padding: .55rem .65rem; border-radius: 10px; box-shadow: none; }
+.day-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+@media (max-width: 359px) { .day-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.postcard.mini { gap: 0; padding: .55rem .55rem; border-radius: 10px; box-shadow: none; }
 .postcard.mini .pc-days { font-size: .68rem; }
-.postcard.mini .pc-price { margin-top: .1rem; font-size: 1.1rem; }
+.postcard.mini .pc-price { margin-top: .1rem; font-size: clamp(.82rem, 15cqi, 1.02rem); }
 /* The chosen length is solid blue, like the first and last days of the hire on the calendar. */
 .day-cards .postcard[aria-checked="true"] { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: 0 0 0 2px #bcd0ff; }
-.day-cards .postcard[aria-checked="true"] .pc-days { color: #dbe6ff; }
+.day-cards .postcard[aria-checked="true"] .pc-days,
+.day-cards .postcard[aria-checked="true"] .pc-cur { color: #dbe6ff; }
+
+/* Responsive "Hire for longer and save" postcard grid across tablets, phones, and narrow foldables */
+@media (max-width: 999px) {
+  .price-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; }
+  .price-cards .postcard.best:last-child:nth-child(4n + 3) { grid-column: span 2; }
+}
+@media (max-width: 639px) {
+  .price-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .price-cards .postcard { padding: .9rem .75rem .8rem; }
+  .price-cards .postcard.best:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: .75rem;
+    row-gap: .15rem;
+    padding: 1rem .95rem .9rem;
+  }
+  .price-cards .postcard.best:last-child:nth-child(odd) .pc-days { grid-column: 1; grid-row: 1; }
+  .price-cards .postcard.best:last-child:nth-child(odd) .pc-price { grid-column: 1; grid-row: 2; margin-top: 0; }
+  .price-cards .postcard.best:last-child:nth-child(odd) .pc-sub { grid-column: 2; grid-row: 1; justify-self: end; margin-bottom: 0; }
+  .price-cards .postcard.best:last-child:nth-child(odd) .pc-stamp { grid-column: 2; grid-row: 2; justify-self: end; margin-top: 0; }
+}
+@media (max-width: 339px) {
+  .price-cards { grid-template-columns: 1fr; gap: .55rem; }
+  .price-cards .postcard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: .65rem;
+    row-gap: .1rem;
+    padding: .85rem .8rem .75rem;
+  }
+  .price-cards .postcard .pc-days { grid-column: 1; grid-row: 1; }
+  .price-cards .postcard .pc-price { grid-column: 1; grid-row: 2; margin-top: 0; }
+  .price-cards .postcard .pc-sub { grid-column: 2; grid-row: 1; justify-self: end; margin-bottom: 0; }
+  .price-cards .postcard .pc-stamp { grid-column: 2; grid-row: 2; justify-self: end; margin-top: 0; }
+}
 
 .price-list-edit { display: grid; gap: .55rem; }
 .price-list-row { display: grid; grid-template-columns: 5.2rem 7.5rem 9rem 1fr; align-items: center; gap: .65rem; }
@@ -451,6 +492,14 @@ legend { font-weight: 700; padding: 0 .4rem; }
 .legal h3 { margin-top: 1.4rem; }
 .legal li { margin-bottom: .4rem; }
 .legal .updated { color: var(--ink-2); font-size: .9rem; }
+.faq-list { display: grid; gap: .85rem; margin-top: 1.5rem; }
+.faq-item { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: .95rem 1.15rem; box-shadow: 0 1px 2px rgba(18, 22, 31, .04); }
+.faq-item summary { cursor: pointer; font-weight: 700; font-size: 1.04rem; line-height: 1.35; list-style: none; display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { content: "+"; font-weight: 700; color: var(--blue); flex-shrink: 0; font-size: 1.2rem; line-height: 1; }
+.faq-item[open] summary::after { content: "\2212"; }
+.faq-item[open] summary { margin-bottom: .65rem; }
+.faq-item p:last-child { margin-bottom: 0; }
 
 /* Toast */
 .toast { position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%); background: var(--ink); color: #fff; padding: .8rem 1.2rem; border-radius: 10px; box-shadow: var(--shadow); z-index: 50; max-width: min(520px, 92vw); }

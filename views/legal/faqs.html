@@ -1,0 +1,57 @@
+    <section class="section">
+      <div class="container legal">
+        <p class="eyebrow">Help &amp; support</p>
+        <h1>Frequently Asked Questions (FAQs)</h1>
+        <p class="updated">Last updated 19 November 2026</p>
+
+        <p>Answers to common questions about payments, pickup and drop-off hours, driver licence verification, insurance, and messaging admin at {{business_name}}.</p>
+
+        <div class="faq-list" data-testid="faq-list" data-agent-id="faq-list">
+          <details class="faq-item" id="faq-stripe-phone" open data-testid="faq-stripe-phone" data-agent-id="faq-stripe-phone">
+            <summary>Why won't Stripe accept my phone number at checkout?</summary>
+            <p>Payment gateways may not allow new phone numbers, especially from low cost or pre-pay carriers, so it is best to not select save information for next time on Stripe or use a mobile phone from a contract carrier.</p>
+            <p>All bookings are billed strictly in Australian dollars (<strong>AUD$</strong>) inclusive of {{gst_percent}}% Australian GST. Leaving &ldquo;Save my information for faster checkout&rdquo; unchecked on Stripe lets you pay directly with your card without phone verification.</p>
+          </details>
+
+          <details class="faq-item" id="faq-hours" data-testid="faq-hours" data-agent-id="faq-hours">
+            <summary>What are the pickup and drop-off hours, and can I book on weekends?</summary>
+            <p>Standard online bookings run <strong>Monday to Friday</strong> at our {{pickup_label}} depot: pickup is <strong>9:00 AM &ndash; 10:00 AM</strong> and drop-off (next day or final return day) is <strong>8:00 AM &ndash; 9:00 AM</strong>.</p>
+            <p>Need an earlier pickup or drop-off time? That is fine &mdash; just <a href="/messages">message admin</a> in advance. Saturday and Sunday pickups or drop-offs also require you to <a href="/messages">message admin</a> first before booking.</p>
+          </details>
+
+          <details class="faq-item" id="faq-pricing" data-testid="faq-pricing" data-agent-id="faq-pricing">
+            <summary>How much does it cost to hire the van, and are there multi-day discounts?</summary>
+            <p>All prices are strictly in Australian dollars (<strong>AUD$</strong>) inclusive of {{gst_percent}}% Australian GST, with automatic multi-day discounts applied on longer hires up to {{max_days}} days: {{price_list}}.</p>
+          </details>
+
+          <details class="faq-item" id="faq-licence" data-testid="faq-licence" data-agent-id="faq-licence">
+            <summary>What driver licence is required and how is it verified?</summary>
+            <p>Drivers must be at least {{min_age}} years old with a current, full Australian driver licence permitting manual vehicle driving (our Renault Kangoo MAXI is a <strong>6-speed manual</strong>). Learner licences are not accepted, and provisional licences are reviewed by our team.</p>
+            <p>During registration you upload both the <strong>front and back</strong> of your driver licence. Our automated check uses Google Gemini to extract licence details (uploaded images are processed in memory and are not stored). See our <a href="/ai-policy">AI Policy (ISO/IEC 42001)</a> and <a href="/privacy">Privacy Policy</a> for full details.</p>
+          </details>
+
+          <details class="faq-item" id="faq-insurance" data-testid="faq-insurance" data-agent-id="faq-insurance">
+            <summary>Do I need my own insurance, and what fuel does the van take?</summary>
+            <p>Yes. You must hold your own current insurance covering the whole rental period, including indemnity (public liability) cover of at least <strong>{{indemnity}}</strong>, and provide your insurer name and policy number before booking. Read the full <a href="/rental-disclaimer">rental disclaimer &amp; insurance requirements</a>.</p>
+            <p>The Renault Kangoo MAXI runs strictly on <strong>Diesel fuel</strong> only.</p>
+          </details>
+
+          <details class="faq-item" id="faq-location" data-testid="faq-location" data-agent-id="faq-location">
+            <summary>Why do I need to share my location when booking?</summary>
+            <p>To keep local pickups quick and reliable, hires are available within {{radius_km}} km of our {{pickup_label}} depot. Your browser checks your distance at the time of booking.</p>
+          </details>
+
+          <details class="faq-item" id="faq-cancellations" data-testid="faq-cancellations" data-agent-id="faq-cancellations">
+            <summary>Can I cancel my booking for a refund?</summary>
+            <p>Yes. You can cancel online more than {{cancellation_hours}} hours before pickup for a full refund in <strong>AUD$</strong> to your original payment method. For later cancellations, please <a href="/messages">message admin</a>.</p>
+          </details>
+
+          <details class="faq-item" id="faq-messaging" data-testid="faq-messaging" data-agent-id="faq-messaging">
+            <summary>How do I message admin, and how long are messages kept?</summary>
+            <p>Every signed-in customer can <a href="/messages">Message Admin</a> directly inside the web app. All customer&ndash;admin messages are retained securely for 7 years in accordance with our <a href="/privacy">Privacy Policy</a>.</p>
+          </details>
+        </div>
+
+        <p class="mt">Still have a question? <a href="/messages">Message Admin</a> directly from your account or contact us {{contact_email}}.</p>
+      </div>
+    </section>

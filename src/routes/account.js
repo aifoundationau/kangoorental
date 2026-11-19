@@ -1,13 +1,25 @@
 import { Router } from 'express';
-import { firestore, col, allDocs, nowIso, audit, FieldValue, getSettings, num } from '../db.js';
-import {
-  HttpError, requireUser, rateLimit, verifyPassword, destroyAllSessions, destroySession, isStaff,
-} from '../security.js';
+import { firestore, col, allDocs, nowIso, audit, FieldValue, Timestamp, getSettings, num } from '../db.js';
+import { HttpError, requireUser, rateLimit, isStaff } from '../security.js';
 import { str, PATTERNS, AU_STATES, validDate, ageOn, brisbaneToday } from '../util.js';
-import { licenceUpload, publicUser, readLicenceFields, runLicenceCheck, getUser } from './auth.js';
+import { licencePhotoFields, publicUser, readLicenceFields, runLicenceCheck, getUser } from './auth.js';
 
 export const router = Router();
 router.use(['/account', '/messages'], requireUser);
+
+export const MESSAGE_RETENTION_YEARS = 7;
+
+function retentionDates(baseDate = new Date()) {
+  const d = baseDate instanceof Date ? new Date(baseDate.getTime()) : new Date(baseDate);
+  const until = new Date(d.getTime());
+  until.setUTCFullYear(until.getUTCFullYear() + MESSAGE_RETENTION_YEARS);
+  return {
+    createdAt: d.toISOString(),
+    retainUntil: until.toISOString(),
+    retainUntilAt: Timestamp.fromDate(until),
+    retentionYears: MESSAGE_RETENTION_YEARS,
+  };
+}
 
 router.put('/account/profile', async (req, res) => {
   const b = req.body || {};
@@ -45,14 +57,17 @@ router.put('/account/insurance', async (req, res) => {
 
 router.post('/account/licence',
   rateLimit({ windowMs: 60 * 60 * 1000, max: 5, key: (req) => `u${req.user.id}`, message: 'Too many licence uploads. Please try again in an hour.' }),
-  licenceUpload.single('licence'),
+  licencePhotoFields,
   async (req, res) => {
     if (req.user.licenceStatus === 'verified') throw new HttpError(409, 'Your licence is already verified.');
     const lic = readLicenceFields(req.body || {});
     if (!AU_STATES.includes(lic.licenceState)) throw new HttpError(400, 'Please choose a valid Australian state.');
     if (lic.licenceExpiry < brisbaneToday()) throw new HttpError(400, 'Your licence has expired.');
     await col.users.doc(req.user.id).update(lic);
-    const result = await runLicenceCheck(req.user.id, req.file, { fullName: req.user.fullName, dob: req.user.dob, ...lic }, req.ip);
+    const result = await runLicenceCheck(req.user.id, {
+      front: req.files?.licence?.[0],
+      back: req.files?.licenceBack?.[0],
+    }, { fullName: req.user.fullName, dob: req.user.dob, ...lic }, req.ip);
     res.json({ user: publicUser(await getUser(req.user.id)), licence: { status: result.status, notes: result.notes } });
   });
 
@@ -67,75 +82,72 @@ router.get('/account/payments', async (req, res) => {
 });
 
 router.post('/account/delete', async (req, res) => {
-  if (isStaff(req.user)) throw new HttpError(403, 'Staff accounts cannot be deleted here.');
-  const user = await getUser(req.user.id);
-  if (user.passwordHash) {
-    if (!(await verifyPassword(String(req.body?.password || ''), user.passwordHash))) throw new HttpError(400, 'Password is incorrect.');
-  } else if (req.body?.confirm !== 'DELETE') {
-    throw new HttpError(400, 'Type DELETE to confirm.');
-  }
-  const now = Date.now();
-  const live = allDocs(await col.bookings.where('userId', '==', user.id).get())
-    .filter((b) => b.status === 'confirmed' || b.status === 'active' || (b.status === 'pending_payment' && b.paymentExpiresAt > now));
-  if (live.length) throw new HttpError(409, 'Please cancel or complete your current bookings before deleting your account.');
-
-  // Booking and payment records are kept for tax law; personal details are removed.
-  const del = FieldValue.delete();
-  const batch = firestore.batch();
-  batch.update(col.users.doc(user.id), {
-    email: `deleted-${user.id}@invalid`, passwordHash: 'deleted', googleSub: del, fullName: 'Deleted customer', disabled: true,
-    phone: del, dob: del, addressLine: del, suburb: del, state: del, postcode: del, licenceNumber: del,
-    licenceState: del, licenceExpiry: del, licenceClass: del, licenceNotes: del, regLat: del, regLng: del,
-    regAccuracyM: del, insurer: del, policyNumber: del, policyExpiry: del, deletedAt: nowIso(),
-  });
-  batch.delete(col.emails.doc(user.email));
-  for (const b of allDocs(await col.bookings.where('userId', '==', user.id).get())) {
-    batch.update(col.bookings.doc(b.id), { userName: 'Deleted customer', userEmail: del, userPhone: del });
-  }
-  await batch.commit();
-  await firestore.recursiveDelete(col.threads.doc(user.id));
-  audit(user.id, 'account.delete', null, req.ip);
-  await destroyAllSessions(user.id);
-  await destroySession(req, res);
-  res.json({ ok: true });
+  throw new HttpError(403, 'Accounts cannot be self-deleted. Please message admin to request account deletion from a superadmin.');
 });
 
 /* ---------- Messages ---------- */
 
 export async function postMessage(customer, sender, body) {
   const threadRef = col.threads.doc(customer.id);
+  const ret = retentionDates();
+  const msgRef = threadRef.collection('messages').doc();
   const batch = firestore.batch();
-  batch.create(threadRef.collection('messages').doc(), { sender, body, createdAt: nowIso() });
+  batch.create(msgRef, {
+    sender,
+    body,
+    createdAt: ret.createdAt,
+    retainUntil: ret.retainUntil,
+    retainUntilAt: ret.retainUntilAt,
+    retentionYears: ret.retentionYears,
+  });
   batch.set(threadRef, {
     userId: customer.id,
     fullName: customer.fullName,
     email: customer.email,
     lastBody: body.slice(0, 200),
     lastSender: sender,
-    lastAt: nowIso(),
+    lastAt: ret.createdAt,
+    retainUntil: ret.retainUntil,
+    retainUntilAt: ret.retainUntilAt,
+    retentionYears: ret.retentionYears,
     ...(sender === 'customer'
       ? { unreadForAdmin: FieldValue.increment(1) }
       : { unreadForCustomer: FieldValue.increment(1) }),
   }, { merge: true });
   await batch.commit();
+  return {
+    id: msgRef.id,
+    sender,
+    body,
+    createdAt: ret.createdAt,
+    retainUntil: ret.retainUntil,
+    retentionYears: ret.retentionYears,
+  };
 }
 
 export async function readThread(userId) {
   const qs = await col.threads.doc(userId).collection('messages').orderBy('createdAt').limitToLast(500).get();
-  return allDocs(qs).map(({ id, sender, body, createdAt }) => ({ id, sender, body, createdAt }));
+  return allDocs(qs).map(({ id, sender, body, createdAt, retainUntil, retentionYears }) => ({
+    id,
+    sender,
+    body,
+    createdAt,
+    retainUntil: retainUntil || retentionDates(createdAt).retainUntil,
+    retentionYears: retentionYears || MESSAGE_RETENTION_YEARS,
+  }));
 }
 
 router.get('/messages', async (req, res) => {
   const messages = await readThread(req.user.id);
   if (messages.length) await col.threads.doc(req.user.id).set({ unreadForCustomer: 0 }, { merge: true });
-  res.json({ messages });
+  res.json({ messages, retentionYears: MESSAGE_RETENTION_YEARS });
 });
 
 router.post('/messages',
   rateLimit({ windowMs: 60 * 1000, max: 10, key: (req) => `u${req.user.id}`, message: 'You are sending messages too quickly.' }),
   async (req, res) => {
-    if (req.user.role !== 'supporter') throw new HttpError(403, 'Use the admin inbox to reply to customers.');
+    if (isStaff(req.user)) throw new HttpError(403, 'Use the admin inbox to reply to customers.');
     const body = str(req.body?.body, { field: 'Message', min: 1, max: 2000 });
-    await postMessage(req.user, 'customer', body);
-    res.status(201).json({ ok: true });
+    const message = await postMessage(req.user, 'customer', body);
+    res.status(201).json({ ok: true, message });
   });

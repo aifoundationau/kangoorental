@@ -63,6 +63,7 @@ const PAGES = {
   '/terms': { view: 'legal/terms.html', title: 'Terms of Service' },
   '/ai-policy': { view: 'legal/ai-policy.html', title: 'AI Policy (ISO/IEC 42001)' },
   '/security-policy': { view: 'legal/security-policy.html', title: 'Security Policy (ISO/IEC 27001)' },
+  '/faqs': { view: 'legal/faqs.html', title: 'Frequently Asked Questions (FAQs)' },
 };
 const NOT_FOUND = { view: 'pages/404.html', title: 'Page not found' };
 
@@ -105,6 +106,12 @@ for (const [route, page] of Object.entries(PAGES)) {
     res.type('html').send(await render(page));
   });
 }
+
+app.get('/messages', (req, res) => {
+  if (!req.user) return res.redirect('/login?next=%2Fmessages');
+  if (isStaff(req.user)) return res.redirect('/admin#messages');
+  return res.redirect('/account?tab=messages#messages');
+});
 
 app.use(async (req, res) => res.status(404).type('html').send(await render(NOT_FOUND)));
 

@@ -24,8 +24,7 @@
       <nav class="site-nav" id="siteNav" aria-label="Main">
         <a href="/#book">Book</a>
         <a href="/#pricing">Pricing</a>
-        <a href="/#hub">Weather &amp; time</a>
-        <a href="/rental-disclaimer">Insurance</a>
+        <a href="/messages" id="navMessages" data-testid="nav-messages" data-agent-id="nav-messages">Message Admin</a>
         <span class="nav-auth" data-auth="guest">
           <a href="/api/auth/google/start" id="navGoogleBtn" class="btn-google-nav" data-testid="nav-google-btn" data-agent-id="nav-google-btn" aria-label="Sign in or register with Google">
             <svg class="google-g-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -51,6 +50,7 @@
               </div>
               <hr class="user-menu-divider">
               <a class="user-menu-item" id="navAccount" href="/account" role="menuitem" data-testid="menu-item-account" data-agent-id="menu-item-account">Admin panel</a>
+              <a class="user-menu-item" id="navMenuMessages" href="/messages" role="menuitem" data-testid="menu-item-messages" data-agent-id="menu-item-messages">Message Admin</a>
               <button class="user-menu-item user-menu-logout" id="logoutBtn" type="button" role="menuitem" data-testid="menu-item-logout" data-agent-id="menu-item-logout">Log out</button>
             </div>
           </div>
@@ -75,6 +75,7 @@
         <a href="/terms">Terms of Service</a>
         <a href="/ai-policy">AI Policy (ISO/IEC 42001)</a>
         <a href="/security-policy">Security Policy (ISO/IEC 27001)</a>
+        <a href="/faqs" id="footerFaqs" data-testid="footer-faqs" data-agent-id="footer-faqs">FAQs</a>
       </nav>
       <p class="footer-copy">&copy; 2026 AI Foundation</p>
     </div>

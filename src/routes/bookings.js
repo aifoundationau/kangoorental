@@ -7,7 +7,7 @@ import {
 import { checkServiceArea } from './auth.js';
 import { config } from '../config.js';
 import {
-  quote, maxRentalDays, priceTable, handoverRules, isHandoverDay, dayLabel, brisbaneTime, brisbaneToday, addDays,
+  quote, maxRentalDays, priceTable, handoverRules, isHandoverDay, isWeekend, dayLabel, brisbaneTime, brisbaneToday, addDays,
   bookingRef, int, validDate, str, DAY,
 } from '../util.js';
 
@@ -45,6 +45,8 @@ export function publicConfig(settings) {
     maxAdvanceDays: num(settings, 'max_advance_days'),
     firstPickupHour: num(settings, 'first_pickup_hour'),
     lastPickupHour: num(settings, 'last_pickup_hour'),
+    firstReturnHour: num(settings, 'first_return_hour'),
+    lastReturnHour: num(settings, 'last_return_hour'),
     requiredIndemnityCents: num(settings, 'required_indemnity_cents'),
     contactEmail: settings.contact_email,
     contactPhone: settings.contact_phone,
@@ -145,10 +147,14 @@ router.post('/bookings', requireUser, async (req, res) => {
   const handover = handoverRules(settings);
   const returnDate = addDays(date, days);
   if (!isHandoverDay(handover, date)) {
-    throw new HttpError(400, `Pickups aren't available on ${dayLabel(date)}. Please choose another pickup day.`);
+    throw new HttpError(400, isWeekend(date)
+      ? `Saturday and Sunday pickups (${dayLabel(date)}) require messaging admin first. Please message us in your account or choose a Monday–Friday date.`
+      : `Pickups aren't available on ${dayLabel(date)}. Please choose another pickup day or message admin.`);
   }
   if (!isHandoverDay(handover, returnDate)) {
-    throw new HttpError(400, `Returns aren't available on ${dayLabel(returnDate)}. Please choose a hire length that's returned on another day.`);
+    throw new HttpError(400, isWeekend(returnDate)
+      ? `Saturday and Sunday drop-offs (${dayLabel(returnDate)}) require messaging admin first. Please message us or choose a hire length returning Monday–Friday.`
+      : `Returns aren't available on ${dayLabel(returnDate)}. Please choose a hire length that's returned on another day or message admin.`);
   }
   // Anyone can register, but bookings are only for people near the depot: the browser sends its location with every booking.
   const area = checkServiceArea(b.lat, b.lng, settings);
@@ -157,12 +163,15 @@ router.post('/bookings', requireUser, async (req, res) => {
     throw new HttpError(403, `Bookings are only open to people within ${area.radiusKm} km of our ${settings.pickup_label} depot. You appear to be ${area.distanceKm} km away.`);
   }
 
+  const firstPickupHour = num(settings, 'first_pickup_hour');
+  const lastPickupHour = num(settings, 'last_pickup_hour');
+  const firstReturnHour = num(settings, 'first_return_hour');
   const hour = Number(time.slice(0, 2));
-  if (hour < num(settings, 'first_pickup_hour') || hour > num(settings, 'last_pickup_hour')) {
-    throw new HttpError(400, 'Please choose a pickup time within opening hours.');
+  if (hour < firstPickupHour || hour > lastPickupHour) {
+    throw new HttpError(400, `Pickup is ${firstPickupHour}:00–${lastPickupHour}:00 (for an earlier time, please message admin).`);
   }
   const startAt = brisbaneTime(date, time);
-  const endAt = startAt + days * DAY;
+  const endAt = brisbaneTime(returnDate, `${String(firstReturnHour).padStart(2, '0')}:00`);
   if (startAt < Date.now() + num(settings, 'min_notice_hours') * 3600000) {
     throw new HttpError(400, `Bookings need at least ${settings.min_notice_hours} hours notice.`);
   }

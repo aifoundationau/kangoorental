@@ -35,6 +35,7 @@ function serviceAccount() {
 const vercelUrl = env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '';
 const googleClientId = (env.GOOGLE_OAUTH_CLIENT_ID || '').trim();
 const googleClientSecret = (env.GOOGLE_OAUTH_CLIENT_SECRET || '').trim();
+const geminiApiKey = (env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '').trim();
 
 export const config = {
   port: Number(env.PORT || 3000),
@@ -56,9 +57,9 @@ export const config = {
     : env.NODE_ENV !== 'production',
 
   // Gemini licence verification (optional). Without credentials, licences go to manual admin review.
-  geminiApiKey: env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '',
-  licenceAiEnabled: Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY) && env.LICENCE_AI !== 'off',
-  licenceModel: env.LICENCE_MODEL || 'gemini-3.8-flash',
+  geminiApiKey,
+  licenceAiEnabled: Boolean(geminiApiKey) && env.LICENCE_AI !== 'off',
+  licenceModel: (env.LICENCE_MODEL || 'gemini-4-hydrogen').trim(),
 
   // Google OAuth 2.0 (Authorization Code + PKCE, plus ID token verification).
   // Credentials come strictly from environment variables (never hardcoded).
@@ -98,11 +99,13 @@ export const DEFAULT_SETTINGS = {
   max_rental_days: '7',
   // Days the van can be picked up or returned (the owner works on other days). handover_weekdays is the usual week
   // (0 = Sunday ... 6 = Saturday); handover_overrides switches single dates on or off: "2026-11-03:0,2026-11-07:1".
-  handover_weekdays: '0,1,2,3,4,5,6',
+  handover_weekdays: '1,2,3,4,5',
   handover_overrides: '',
   max_advance_days: '180',
-  first_pickup_hour: '7',
-  last_pickup_hour: '18',
+  first_pickup_hour: '9',
+  last_pickup_hour: '10',
+  first_return_hour: '8',
+  last_return_hour: '9',
   required_indemnity_cents: '200000000', // AUD $2,000,000
   contact_email: '',
   contact_phone: '',

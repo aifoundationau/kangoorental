@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import {
-  firestore, col, allDocs, docData, nowIso, getSettings, setSettings, audit,
+  firestore, col, allDocs, docData, nowIso, getSettings, setSettings, audit, FieldValue,
 } from '../db.js';
-import { HttpError, requireAdmin, requireSuperadmin, hashPassword, destroyAllSessions } from '../security.js';
+import { HttpError, requireAdmin, requireSuperadmin, hashPassword, destroyAllSessions, isStaff } from '../security.js';
 import {
   str, int, validDate, brisbaneToday, brisbaneDate, brisbaneTime, addDays, quote, floorWhole, maxRentalDays, handoverRules,
   isHandoverDay, PATTERNS, formatAud,
@@ -10,15 +10,21 @@ import {
 import { computeLedger, ledgerToCsv, splitGstFromGross } from '../ledger.js';
 import { publicUser, getUser, createUser } from './auth.js';
 import { cancelBooking } from './bookings.js';
-import { postMessage, readThread } from './account.js';
+import { postMessage, readThread, MESSAGE_RETENTION_YEARS } from './account.js';
 
 export const router = Router();
 router.use('/admin', requireAdmin);
 
-const customerView = (u) => publicUser(u, {
+const customerView = (u, { full = false } = {}) => publicUser(u, {
   disabled: Boolean(u.disabled),
+  deletedAt: u.deletedAt || null,
   regDistanceKm: u.regDistanceKm,
   licenceMethod: u.licenceMethod,
+  ...(full ? {
+    licenceExtracted: u.licenceExtracted || null,
+    acceptedTermsAt: u.acceptedTermsAt || null,
+    acceptedAiCheckAt: u.acceptedAiCheckAt || null,
+  } : {}),
 });
 
 /* ---------- Dashboard ---------- */
@@ -110,6 +116,8 @@ const SETTING_RULES = {
   max_advance_days: (v) => int(v, { field: 'Maximum advance days', min: 1, max: 730 }),
   first_pickup_hour: (v) => int(v, { field: 'First pickup hour', min: 0, max: 23 }),
   last_pickup_hour: (v) => int(v, { field: 'Last pickup hour', min: 0, max: 23 }),
+  first_return_hour: (v) => int(v, { field: 'First drop-off hour', min: 0, max: 23 }),
+  last_return_hour: (v) => int(v, { field: 'Last drop-off hour', min: 0, max: 23 }),
   required_indemnity_cents: (v) => wholeCents(int(v, { field: 'Required indemnity', min: 0, max: 100000000000 })),
   contact_email: (v) => str(v, { field: 'Contact email', required: false, max: 120 }),
   contact_phone: (v) => str(v, { field: 'Contact phone', required: false, max: 30 }),
@@ -147,6 +155,9 @@ router.put('/admin/settings', requireSuperadmin, async (req, res) => {
   const merged = { ...(await getSettings()), ...clean };
   if (Number(merged.first_pickup_hour) > Number(merged.last_pickup_hour)) {
     throw new HttpError(400, 'First pickup hour must be before the last pickup hour.');
+  }
+  if (Number(merged.first_return_hour) > Number(merged.last_return_hour)) {
+    throw new HttpError(400, 'First drop-off hour must be before the last drop-off hour.');
   }
   if (Number(merged.contractor_a_share_pct) + Number(merged.contractor_b_share_pct) !== 100) {
     throw new HttpError(400, 'Contractor split percentages must add up to 100%.');
@@ -304,24 +315,33 @@ router.delete('/admin/blocks/:id', async (req, res) => {
 
 router.get('/admin/users', async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
-  let users = allDocs(await col.users.where('role', '==', 'supporter').get());
-  if (q) {
-    users = users.filter((u) => [u.fullName, u.email, u.licenceNumber, u.phone]
-      .some((v) => String(v || '').toLowerCase().includes(q)));
+  const status = String(req.query.status || '').trim().toLowerCase();
+  const isSuper = req.user.role === 'superadmin';
+  let users = allDocs(await col.users.get()).filter((u) => !isStaff(u) && (isSuper || !u.deletedAt));
+  if (status === 'disabled') users = users.filter((u) => Boolean(u.disabled));
+  else if (status === 'deleted') users = users.filter((u) => Boolean(u.deletedAt));
+  else if (['pending', 'verified', 'rejected', 'unverified'].includes(status)) {
+    users = users.filter((u) => u.licenceStatus === status);
   }
-  users.sort((a, b) => (b.licenceStatus === 'pending') - (a.licenceStatus === 'pending') || b.createdAt.localeCompare(a.createdAt));
-  res.json({ users: users.slice(0, 300).map(customerView) });
+  if (q) {
+    users = users.filter((u) => [
+      u.fullName, u.email, u.licenceNumber, u.licenceCardNumber, u.phone,
+      u.suburb, u.postcode, u.licenceAddressFront, u.licenceAddressBack,
+    ].some((v) => String(v || '').toLowerCase().includes(q)));
+  }
+  users.sort((a, b) => (b.licenceStatus === 'pending') - (a.licenceStatus === 'pending') || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  res.json({ users: users.slice(0, 500).map((u) => customerView(u, { full: isSuper })), total: users.length });
 });
 
 router.get('/admin/users/:id', async (req, res) => {
-  const u = await getUser(req.params.id);
-  if (!u || u.role !== 'supporter') throw new HttpError(404, 'Customer not found.');
+  const u = await requireCustomer(req.params.id);
+  const isSuper = req.user.role === 'superadmin';
   const [bookings, payments] = await Promise.all([
     col.bookings.where('userId', '==', u.id).get(),
     col.payments.where('userId', '==', u.id).get(),
   ]);
   res.json({
-    user: customerView(u),
+    user: customerView(u, { full: isSuper }),
     bookings: allDocs(bookings).filter((b) => b.status !== 'expired').sort((a, b) => b.startAt - a.startAt),
     payments: allDocs(payments).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100),
   });
@@ -329,12 +349,13 @@ router.get('/admin/users/:id', async (req, res) => {
 
 async function requireCustomer(id) {
   const u = await getUser(id);
-  if (!u || u.role !== 'supporter') throw new HttpError(404, 'Customer not found.');
+  if (!u || isStaff(u)) throw new HttpError(404, 'Customer not found.');
   return u;
 }
 
 router.post('/admin/users/:id/licence', async (req, res) => {
   const u = await requireCustomer(req.params.id);
+  if (u.deletedAt) throw new HttpError(409, 'Deleted accounts cannot be modified.');
   const status = String(req.body?.status || '');
   if (!['verified', 'rejected', 'pending'].includes(status)) throw new HttpError(400, 'Invalid licence status.');
   const notes = str(req.body?.notes, { field: 'Notes', required: false, max: 300 }) ||
@@ -346,10 +367,55 @@ router.post('/admin/users/:id/licence', async (req, res) => {
 
 router.post('/admin/users/:id/disabled', async (req, res) => {
   const u = await requireCustomer(req.params.id);
+  if (u.deletedAt) throw new HttpError(409, 'Deleted accounts cannot be re-enabled.');
   const disabled = req.body?.disabled === true;
   await col.users.doc(u.id).update({ disabled });
   if (disabled) await destroyAllSessions(u.id);
   audit(req.user.id, disabled ? 'user.disable' : 'user.enable', `user ${u.id}`, req.ip);
+  res.json({ ok: true });
+});
+
+router.delete('/admin/users/:id', requireSuperadmin, async (req, res) => {
+  const u = await requireCustomer(req.params.id);
+  if (u.deletedAt) throw new HttpError(409, 'This account has already been deleted.');
+  const now = Date.now();
+  const userBookings = allDocs(await col.bookings.where('userId', '==', u.id).get());
+  const live = userBookings.filter((b) =>
+    b.status === 'confirmed' || b.status === 'active' || (b.status === 'pending_payment' && b.paymentExpiresAt > now));
+  if (live.length) {
+    throw new HttpError(409, 'Cancel or complete this customer\'s current bookings before deleting their account.');
+  }
+
+  // Booking, payment, and message records (7 years) are retained for compliance and tax law; personal details are removed.
+  const del = FieldValue.delete();
+  const batch = firestore.batch();
+  batch.update(col.users.doc(u.id), {
+    email: `deleted-${u.id}@invalid`, passwordHash: 'deleted', googleSub: del, fullName: 'Deleted customer', disabled: true,
+    phone: del, dob: del, addressLine: del, suburb: del, state: del, postcode: del, licenceNumber: del,
+    licenceCardNumber: del, licenceState: del, licenceAuthority: del, licenceType: del, licenceExpiry: del,
+    licenceIssueDate: del, licenceClass: del, licenceConditions: del, licenceAddressFront: del,
+    licenceAddressBack: del, licenceBriefDescription: del, licenceExtracted: del, licenceNotes: del,
+    licenceFrontProvided: del, licenceBackProvided: del, regLat: del, regLng: del,
+    regAccuracyM: del, insurer: del, policyNumber: del, policyExpiry: del,
+    deletedAt: nowIso(), deletedBy: req.user.id,
+  });
+  if (u.email) batch.delete(col.emails.doc(u.email));
+  for (const b of userBookings) {
+    batch.update(col.bookings.doc(b.id), { userName: 'Deleted customer', userEmail: del, userPhone: del });
+  }
+  const threadSnap = await col.threads.doc(u.id).get();
+  if (threadSnap.exists) {
+    batch.update(col.threads.doc(u.id), {
+      fullName: 'Deleted customer',
+      email: del,
+      archivedAt: nowIso(),
+      unreadForAdmin: 0,
+      unreadForCustomer: 0,
+    });
+  }
+  await batch.commit();
+  await destroyAllSessions(u.id);
+  audit(req.user.id, 'user.delete', `user ${u.id}`, req.ip);
   res.json({ ok: true });
 });
 
@@ -364,20 +430,24 @@ router.get('/admin/threads/:userId', async (req, res) => {
   const u = await requireCustomer(req.params.userId);
   const messages = await readThread(u.id);
   if (messages.length) await col.threads.doc(u.id).set({ unreadForAdmin: 0 }, { merge: true });
-  res.json({ user: customerView(u), messages });
+  res.json({ user: customerView(u), messages, archived: Boolean(u.deletedAt), retentionYears: MESSAGE_RETENTION_YEARS });
 });
 
 router.post('/admin/threads/:userId', async (req, res) => {
   const u = await requireCustomer(req.params.userId);
+  if (u.deletedAt) {
+    throw new HttpError(409, 'This account has been deleted. The message history is archived for 7-year retention and is read-only.');
+  }
   const body = str(req.body?.body, { field: 'Message', min: 1, max: 2000 });
-  await postMessage(u, 'admin', body);
-  res.status(201).json({ ok: true });
+  const message = await postMessage(u, 'admin', body);
+  res.status(201).json({ ok: true, message });
 });
 
 /* ---------- Staff accounts (superadmin) ---------- */
 
 router.get('/admin/staff', requireSuperadmin, async (req, res) => {
   const staff = allDocs(await col.users.where('role', 'in', ['admin', 'superadmin']).get())
+    .filter((u) => !u.deletedAt)
     .map(({ id, role, email, fullName, disabled, createdAt }) => ({ id, role, email, fullName, disabled: Boolean(disabled), createdAt }))
     .sort((a, b) => b.role.localeCompare(a.role) || a.createdAt.localeCompare(b.createdAt));
   res.json({ staff });
@@ -398,11 +468,36 @@ router.post('/admin/staff/:id/disabled', requireSuperadmin, async (req, res) => 
   const id = String(req.params.id);
   if (id === req.user.id) throw new HttpError(400, 'You cannot disable your own account.');
   const u = await getUser(id);
-  if (!u || !['admin', 'superadmin'].includes(u.role)) throw new HttpError(404, 'Staff member not found.');
+  if (!u || !['admin', 'superadmin'].includes(u.role) || u.deletedAt) throw new HttpError(404, 'Staff member not found.');
   const disabled = req.body?.disabled === true;
   await col.users.doc(id).update({ disabled });
   if (disabled) await destroyAllSessions(id);
   audit(req.user.id, disabled ? 'staff.disable' : 'staff.enable', `user ${id}`, req.ip);
+  res.json({ ok: true });
+});
+
+router.delete('/admin/staff/:id', requireSuperadmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (id === req.user.id) throw new HttpError(400, 'Nobody can delete their own account.');
+  const u = await getUser(id);
+  if (!u || !['admin', 'superadmin'].includes(u.role) || u.deletedAt) {
+    throw new HttpError(404, 'Staff member not found.');
+  }
+  const del = FieldValue.delete();
+  const batch = firestore.batch();
+  batch.update(col.users.doc(id), {
+    email: `deleted-${id}@invalid`,
+    passwordHash: 'deleted',
+    googleSub: del,
+    fullName: 'Deleted staff',
+    disabled: true,
+    deletedAt: nowIso(),
+    deletedBy: req.user.id,
+  });
+  if (u.email) batch.delete(col.emails.doc(u.email));
+  await batch.commit();
+  await destroyAllSessions(id);
+  audit(req.user.id, 'staff.delete', `user ${id}`, req.ip);
   res.json({ ok: true });
 });
 

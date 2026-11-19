@@ -32,7 +32,7 @@
       <div class="container">
         <div class="section-head">
           <h2 id="bookTitle">Book the van</h2>
-          <p>Click the days you need on the calendar, up to {{max_days}} days in a row. Striped days have no pickups or returns.</p>
+          <p>Click the days you need on the calendar, up to {{max_days}} days in a row. Standard pickups &amp; drop-offs run <strong>Monday&ndash;Friday</strong>; striped days (including Saturday &amp; Sunday) require messaging admin first.</p>
         </div>
 
         <div class="booking-grid">
@@ -46,7 +46,7 @@
             <ul class="legend">
               <li><span class="dot chosen"></span>Your days</li>
               <li><span class="dot available"></span>Available</li>
-              <li><span class="dot nohandover"></span>No pickups or returns</li>
+              <li><span class="dot nohandover"></span>Message admin first (Sat/Sun or closed)</li>
               <li><span class="dot partial"></span>Partly booked</li>
               <li><span class="dot booked"></span>Booked</li>
             </ul>
@@ -56,11 +56,14 @@
           <form class="card booking-form" id="bookingForm" novalidate>
             <div class="booking-selection" id="bkSelection">
               <span class="label">Selected hire period</span>
-              <p class="selection-summary" id="bkSummary" data-testid="bk-summary" data-agent-id="bk-summary">Click a day panel on the calendar to begin</p>
-              <p class="hint" id="bkDepotHours">Depot handover hours: 7:00 AM &ndash; 6:00 PM</p>
+              <p class="selection-summary" id="bkSummary" data-testid="bk-summary" data-agent-id="bk-summary">Click a Monday&ndash;Friday day on the calendar to begin</p>
+              <div class="handover-hours" id="bkDepotHours" data-testid="bk-depot-hours" data-agent-id="bk-depot-hours">
+                <p class="hint"><strong>Pickup:</strong> 9:00 AM &ndash; 10:00 AM &middot; <strong>Drop-off (next day):</strong> 8:00 AM &ndash; 9:00 AM</p>
+                <p class="hint">Earlier time is OK &mdash; just <a href="/messages" data-testid="bk-message-admin" data-agent-id="bk-message-admin">message admin</a>. <strong>Monday&ndash;Friday</strong> online; <strong>Saturday &amp; Sunday</strong> must <a href="/messages">message admin</a> first.</p>
+              </div>
             </div>
             <input id="bkDate" name="date" type="hidden">
-            <input id="bkTime" name="time" type="hidden" value="07:00">
+            <input id="bkTime" name="time" type="hidden" value="09:00">
             <div id="bkDays" hidden></div>
             <p id="bkReturn" hidden></p>
 

@@ -27,14 +27,17 @@
           <div class="tab-panel" data-panel="overview" role="tabpanel">
             <h2>Ready to book?</h2>
             <ul class="status-list" id="readyList"></ul>
-            <a class="btn" href="/#book">Book the van</a>
+            <div class="btn-row">
+              <a class="btn" href="/#book">Book the van</a>
+              <button class="btn btn-ghost" type="button" data-goto="messages" data-testid="acct-message-admin" data-agent-id="acct-message-admin">Message Admin</button>
+            </div>
             <h2 class="mt">Next booking</h2>
             <div id="nextBooking"><p class="hint">No upcoming bookings.</p></div>
           </div>
 
           <div class="tab-panel" data-panel="bookings" role="tabpanel" hidden>
             <h2>Your bookings</h2>
-            <p class="hint">Cancel online more than {{cancellation_hours}} hours before pickup for a full AUD refund. After that, please message us.</p>
+            <p class="hint">Cancel online more than {{cancellation_hours}} hours before pickup for a full AUD refund. After that, please <a href="#messages" data-goto="messages">message admin</a>.</p>
             <div id="bookingList"></div>
           </div>
 
@@ -68,11 +71,17 @@
                   <input id="lExpiry" name="licenceExpiry" type="date" required>
                 </div>
               </div>
-              <div class="field">
-                <label for="lFile">Photo of the front of your licence</label>
-                <input id="lFile" name="licence" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required>
-                <p class="hint">The photo is checked and then deleted. It is never saved.</p>
+              <div class="field-row">
+                <div class="field">
+                  <label for="lFile">Photo of the front of your licence</label>
+                  <input id="lFile" name="licence" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-testid="acct-licence-front" data-agent-id="acct-licence-front" required>
+                </div>
+                <div class="field">
+                  <label for="lFileBack">Photo of the back of your licence</label>
+                  <input id="lFileBack" name="licenceBack" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-testid="acct-licence-back" data-agent-id="acct-licence-back" required>
+                </div>
               </div>
+              <p class="hint">Google Gemini AI reads all front &amp; back details into your profile; raw photos are discarded immediately and never saved.</p>
               <p class="form-error" id="licenceError" role="alert" hidden></p>
               <button class="btn" type="submit" id="licenceBtn">Check my licence</button>
             </form>
@@ -110,13 +119,13 @@
           </div>
 
           <div class="tab-panel" data-panel="messages" role="tabpanel" hidden>
-            <h2>Messages</h2>
-            <p class="hint">Chat with our team about bookings, pickups or anything else.</p>
+            <h2>Message Admin</h2>
+            <p class="hint" id="msgRetentionNote" data-testid="msg-retention-note">Chat directly with Admin about bookings, earlier pickup/drop-off times, weekend requests, or anything else. <strong>All messages are stored securely for 7 years.</strong></p>
             <div class="chat" id="chat" aria-live="polite"></div>
             <form class="chat-form" id="chatForm">
               <label class="sr-only" for="chatInput">Message</label>
-              <textarea id="chatInput" rows="2" maxlength="2000" placeholder="Type your message…" required></textarea>
-              <button class="btn" type="submit">Send</button>
+              <textarea id="chatInput" rows="2" maxlength="2000" placeholder="Type your message…" data-testid="chat-input" data-agent-id="chat-input" required></textarea>
+              <button class="btn" type="submit" data-testid="chat-send-btn" data-agent-id="chat-send-btn">Send</button>
             </form>
           </div>
 
@@ -157,7 +166,7 @@
               </div>
               <button class="btn" type="submit">Save details</button>
             </form>
-            <p class="hint">To change your name, date of birth or email, please message us.</p>
+            <p class="hint">To change your name, date of birth or email, please <a href="#messages" data-goto="messages">message admin</a>.</p>
 
             <div id="passwordSection">
             <h2 class="mt">Change password</h2>
@@ -174,17 +183,8 @@
             </form>
             </div>
 
-            <h2 class="mt">Delete account</h2>
-            <p class="hint">We remove your personal details. Booking and payment records are kept as required by tax law.</p>
-            <form id="deleteForm" class="inline-form">
-              <label for="delPw" id="delPwLabel">Password</label>
-              <input id="delPw" type="password" autocomplete="current-password" required data-testid="delete-password" data-agent-id="delete-password">
-              <button class="btn btn-danger" type="button" id="delStartBtn" data-testid="delete-account-start" data-agent-id="delete-account-start">Delete my account</button>
-              <div id="delConfirmBox" class="btn-row" hidden>
-                <button class="btn btn-danger" type="submit" id="delConfirmBtn" data-testid="delete-account-confirm" data-agent-id="delete-account-confirm">Confirm delete</button>
-                <button class="btn btn-ghost" type="button" id="delCancelBtn" data-testid="delete-account-cancel" data-agent-id="delete-account-cancel">Cancel</button>
-              </div>
-            </form>
+            <h2 class="mt">Account deletion</h2>
+            <p class="hint" id="deleteAccountNotice" data-testid="delete-account-notice">Accounts cannot be self-deleted. To request account deletion, please <a href="#messages" data-goto="messages">message admin</a> &mdash; only a superadmin can delete an account. Booking, payment, and message records (7 years) are retained for compliance and tax law.</p>
           </div>
         </div>
       </div>

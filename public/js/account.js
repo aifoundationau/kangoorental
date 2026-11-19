@@ -1,5 +1,5 @@
 import {
-  api, getMe, getConfig, formatAud, formatDateTime, formatStamp,
+  api, getMe, getConfig, formatAud, formatDateTime, formatTime, formatStamp,
   getDeviceLocation, toast, showError, setBusy, escapeHtml, withShrunkLicence,
 } from './common.js';
 
@@ -21,7 +21,10 @@ const LICENCE_TEXT = {
 function showTab(name) {
   document.querySelectorAll('[role="tab"]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
   document.querySelectorAll('.tab-panel').forEach((p) => { p.hidden = p.dataset.panel !== name; });
-  history.replaceState(null, '', `${location.pathname}${location.search}#${name}`);
+  const params = new URLSearchParams(location.search);
+  params.delete('tab');
+  const qs = params.toString();
+  history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}#${name}`);
   clearInterval(chatTimer);
   if (name === 'messages') {
     loadChat();
@@ -50,11 +53,12 @@ function renderOverview() {
   const where = !area ? `Bookings are open to people within ${radius} km of our depot. We check your location each time you book.`
     : area.inArea ? `You're ${area.distanceKm} km from our depot, inside our ${radius} km booking area.`
       : `You appear to be ${area.distanceKm} km away. Bookings are only open within ${radius} km of our depot.`;
+  // Hidden for now under Overview; Insurance stays available in the Insurance tab and Admin panel.
   $('readyList').innerHTML = `
     <li class="${!area ? 'wait' : area.inArea ? 'ok' : 'bad'}"><strong>Location:</strong> ${where}
       <button class="link-button" type="button" data-check-location>${area ? 'Check again' : 'Check my location'}</button></li>
     <li class="${cls}"><strong>Licence:</strong> ${text} <a href="#licence" data-goto="licence">View</a></li>
-    <li class="${ins ? 'ok' : 'bad'}"><strong>Insurance:</strong> ${ins ? `${escapeHtml(me.insurer)}, valid to ${escapeHtml(me.policyExpiry)}` : 'Add your insurance details'} <a href="#insurance" data-goto="insurance">${ins ? 'Edit' : 'Add'}</a></li>`;
+    <li class="${ins ? 'ok' : 'bad'}" id="overviewInsuranceItem" data-testid="overview-insurance-item" hidden><strong>Insurance:</strong> ${ins ? `${escapeHtml(me.insurer)}, valid to ${escapeHtml(me.policyExpiry)}` : 'Add your insurance details'} <a href="#insurance" data-goto="insurance">${ins ? 'Edit' : 'Add'}</a></li>`;
 }
 
 function renderLicence() {
@@ -64,9 +68,13 @@ function renderLicence() {
     ${me.licenceNotes ? `<p>${escapeHtml(me.licenceNotes)}</p>` : ''}
     <dl class="details">
       <div><dt>Licence number</dt><dd>${escapeHtml(me.licenceNumber || '–')}</dd></div>
+      ${me.licenceCardNumber ? `<div><dt>Card number</dt><dd>${escapeHtml(me.licenceCardNumber)}</dd></div>` : ''}
       <div><dt>State</dt><dd>${escapeHtml(me.licenceState || '–')}</dd></div>
+      ${me.licenceType ? `<div><dt>Type</dt><dd>${escapeHtml(me.licenceType)}</dd></div>` : ''}
       <div><dt>Expiry</dt><dd>${escapeHtml(me.licenceExpiry || '–')}</dd></div>
       ${me.licenceClass ? `<div><dt>Class</dt><dd>${escapeHtml(me.licenceClass)}</dd></div>` : ''}
+      ${me.licenceConditions ? `<div><dt>Conditions</dt><dd>${escapeHtml(me.licenceConditions)}</dd></div>` : ''}
+      <div><dt>Front &amp; back checked</dt><dd>${me.licenceFrontProvided && me.licenceBackProvided ? 'Yes (front &amp; back)' : me.licenceFrontProvided ? 'Front only' : 'Not yet uploaded'}</dd></div>
     </dl>`;
   const canUpload = me.licenceStatus === 'rejected' || me.licenceStatus === 'unverified';
   $('licenceForm').hidden = !canUpload;
@@ -98,13 +106,8 @@ function renderProfile() {
     dobInput.required = !me.dob;
     if (me.dob) dobInput.value = '';
   }
-  // Google-only accounts have no password to change, and confirm deletion by typing DELETE instead.
+  // Google-only accounts have no password to change.
   $('passwordSection').hidden = !me.hasPassword;
-  if (!me.hasPassword) {
-    $('delPwLabel').textContent = 'Type DELETE';
-    $('delPw').type = 'text';
-    $('delPw').autocomplete = 'off';
-  }
   $('pPhone').value = me.phone || '';
   $('pAddress').value = me.addressLine || '';
   $('pSuburb').value = me.suburb || '';
@@ -122,9 +125,13 @@ function bookingCard(b, { compact = false } = {}) {
     cancelled: 'Cancelled',
   }[b.status] || b.status;
   const pillCls = b.status === 'cancelled' ? 'bad' : b.status === 'pending_payment' ? 'wait' : b.status === 'completed' ? '' : 'ok';
+  const hourText = (h) => formatTime(Date.UTC(2000, 0, 1, h), 'UTC');
+  const pWin = `${hourText(cfg.firstPickupHour ?? 9)}–${hourText(cfg.lastPickupHour ?? 10)}`;
+  const rWin = `${hourText(cfg.firstReturnHour ?? 8)}–${hourText(cfg.lastReturnHour ?? 9)}`;
   return `<article class="booking-card ${b.status}">
     <header><strong>${escapeHtml(b.ref)}</strong><span class="status-pill ${pillCls}">${statusLabel}</span></header>
-    <p><strong>Pickup:</strong> ${formatDateTime(b.startAt)}<br><strong>Return:</strong> ${formatDateTime(b.endAt)}</p>
+    <p><strong>Pickup:</strong> ${formatDateTime(b.startAt)} (${pWin})<br><strong>Drop-off:</strong> ${formatDateTime(b.endAt)} (${rWin})</p>
+    ${!compact && ['confirmed', 'pending_payment'].includes(b.status) ? '<p class="hint">Need an earlier pickup or drop-off time? Just <a href="#messages">message admin</a>.</p>' : ''}
     ${compact ? '' : `<p class="hint">${b.days} day${b.days > 1 ? 's' : ''} &middot; ${formatAud(b.totalCents)} inc. GST${b.refundedAudCents ? ` &middot; ${formatAud(b.refundedAudCents)} refunded` : ''}</p>`}
     ${canCancel && !compact ? `<button class="btn btn-small btn-ghost" data-cancel="${b.id}">Cancel booking</button>` : ''}
   </article>`;
@@ -325,33 +332,6 @@ function bindForms() {
       toast(err.message, 'error');
     }
   });
-
-  $('delStartBtn').addEventListener('click', () => {
-    if (!$('deleteForm').reportValidity()) return;
-    $('delStartBtn').hidden = true;
-    $('delConfirmBox').hidden = false;
-    $('delConfirmBtn').focus();
-  });
-
-  $('delCancelBtn').addEventListener('click', () => {
-    $('delConfirmBox').hidden = true;
-    $('delStartBtn').hidden = false;
-  });
-
-  $('deleteForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if ($('delConfirmBox').hidden) {
-      $('delStartBtn').click();
-      return;
-    }
-    try {
-      const value = $('delPw').value;
-      await api('/account/delete', { method: 'POST', body: me.hasPassword ? { password: value } : { confirm: value.trim().toUpperCase() } });
-      window.location.href = '/';
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -375,8 +355,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshMe();
   loadBookings();
   const tabFromHash = () => {
-    const tab = location.hash.slice(1);
-    return document.querySelector(`[data-tab="${tab}"]`) ? tab : 'overview';
+    const tab = new URLSearchParams(location.search).get('tab') || location.hash.slice(1);
+    return tab && document.querySelector(`[data-tab="${CSS.escape(tab)}"]`) ? tab : 'overview';
   };
   showTab(tabFromHash());
   window.addEventListener('hashchange', () => showTab(tabFromHash()));
