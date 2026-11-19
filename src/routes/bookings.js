@@ -124,11 +124,10 @@ export function bookingView(b) {
   };
 }
 
-function bookingBlockers(user, endAtMs) {
+function bookingBlockers(user) {
   const reasons = [];
   if (user.licenceStatus !== 'verified') reasons.push('licence');
-  const policyEnd = user.policyExpiry ? brisbaneTime(user.policyExpiry) + DAY : 0;
-  if (!user.insurer || !user.policyNumber || !user.indemnityConfirmedAt || policyEnd < endAtMs) reasons.push('insurance');
+  // Insurance details are optional at booking time (still editable under Account -> Insurance).
   return reasons;
 }
 
@@ -225,17 +224,14 @@ router.post('/bookings', requireUser, async (req, res) => {
       busyRanges(startAt, endAt, settings, t),
     ]);
     const user = { id: userSnap.id, ...userSnap.data() };
-    const blockers = bookingBlockers(user, endAt);
+    const blockers = bookingBlockers(user);
     if (blockers.includes('licence')) throw new HttpError(409, 'Your driver licence must be verified before you can book.');
-    if (blockers.includes('insurance')) {
-      throw new HttpError(409, 'Please add your insurance details (including $2 million indemnity cover valid for the whole rental) before booking.');
-    }
     if (busy.some((r) => r.start < endAt && r.end > startAt)) {
       throw new HttpError(409, 'Sorry, the van is not available for that time. Please choose another slot.');
     }
 
-    docPayload.insurer = user.insurer;
-    docPayload.policyNumber = user.policyNumber;
+    docPayload.insurer = user.insurer || null;
+    docPayload.policyNumber = user.policyNumber || null;
 
     t.set(CALENDAR_LOCK, { updatedAt: createdAt });
     t.create(bookingRefDoc, docPayload);

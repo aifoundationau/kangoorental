@@ -354,7 +354,8 @@ function renderAuthPanel() {
   const licenceOk = me.licenceStatus === 'verified';
   items.push(`<li class="${licenceOk ? 'ok' : 'todo'}">Driver licence ${licenceOk ? 'verified' : `<a href="/account#licence">${me.licenceStatus === 'pending' ? 'awaiting review' : 'needs verifying'}</a>`}</li>`);
   const insOk = me.insurer && me.indemnityConfirmed && me.policyExpiry;
-  items.push(`<li class="${insOk ? 'ok' : 'todo'}">Insurance ${insOk ? `on file (${escapeHtml(me.insurer)}, expires ${escapeHtml(me.policyExpiry)})` : '<a href="/account#insurance">add your insurance details</a>'}</li>`);
+  // Hidden for now at booking time; insurance remains optional under Account -> Insurance.
+  items.push(`<li class="${insOk ? 'ok' : 'todo'}" id="bkInsuranceItem" data-testid="bk-insurance-item" hidden>Insurance ${insOk ? `on file (${escapeHtml(me.insurer)}, expires ${escapeHtml(me.policyExpiry)})` : '<a href="/account#insurance">add your insurance details</a>'}</li>`);
   $('checklist').innerHTML = `<ul>${items.join('')}</ul>`;
 }
 

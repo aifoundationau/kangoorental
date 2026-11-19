@@ -38,8 +38,7 @@ function showTab(name) {
 
 function renderHeader() {
   $('acctName').textContent = `Hi, ${me.fullName.split(' ')[0]}`;
-  const ins = me.insurer && me.indemnityConfirmed && me.policyExpiry >= cfg.today;
-  const ready = me.licenceStatus === 'verified' && Boolean(ins);
+  const ready = me.licenceStatus === 'verified';
   $('acctStatus').textContent = ready ? 'Ready to book' : 'Setup incomplete';
   const unread = $('tabUnread');
   unread.hidden = !me.unreadMessages;

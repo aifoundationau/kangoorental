@@ -265,13 +265,6 @@ await step('admin verifies the licence manually', async () => {
   assert.equal((await admin.api(`/admin/users/${customerId}/licence`, { method: 'POST', body: { status: 'verified' } })).status, 200);
 });
 
-await step('customer adds insurance with $2M indemnity confirmation', async () => {
-  const bad = await customer.api('/account/insurance', { method: 'PUT', body: { insurer: 'Test Insure', policyNumber: 'P-1234', policyExpiry: plusDays(400), confirmIndemnity: false } });
-  assert.equal(bad.status, 400);
-  const ok = await customer.api('/account/insurance', { method: 'PUT', body: { insurer: 'Test Insure', policyNumber: 'P-1234', policyExpiry: plusDays(400), confirmIndemnity: true } });
-  assert.equal(ok.status, 200);
-});
-
 await step('booking requires the disclaimer to be accepted', async () => {
   const { status } = await customer.api('/bookings', { method: 'POST', body: { date: slotA, time: '09:00', days: 1, acceptDisclaimer: false } });
   assert.equal(status, 400);
@@ -296,7 +289,7 @@ await step('weekend pickups and outside-hours requests direct customer to messag
   assert.match(late.data.error, /message admin/i);
 });
 
-await step('customer books 1 day (9am pickup, 8am next-day return) in AUD and payment ledger records it', async () => {
+await step('customer books 1 day without prior insurance details on file (9am pickup, 8am next-day return) in AUD', async () => {
   const { status, data } = await customer.api('/bookings', { method: 'POST', body: { date: slotA, time: '09:00', days: 1, acceptDisclaimer: true, ...ARUNDEL, note: 'Moving boxes' } });
   assert.equal(status, 201, JSON.stringify(data));
   bookingId = data.booking.id;
@@ -316,6 +309,13 @@ await step('customer books 1 day (9am pickup, 8am next-day return) in AUD and pa
   assert.equal(payRes.data.payments[0].kind, 'payment');
   assert.equal(payRes.data.payments[0].amountCents, 9900);
   assert.equal(payRes.data.payments[0].currency, 'AUD');
+});
+
+await step('customer can optionally add insurance with $2M indemnity confirmation in account', async () => {
+  const bad = await customer.api('/account/insurance', { method: 'PUT', body: { insurer: 'Test Insure', policyNumber: 'P-1234', policyExpiry: plusDays(400), confirmIndemnity: false } });
+  assert.equal(bad.status, 400);
+  const ok = await customer.api('/account/insurance', { method: 'PUT', body: { insurer: 'Test Insure', policyNumber: 'P-1234', policyExpiry: plusDays(400), confirmIndemnity: true } });
+  assert.equal(ok.status, 200);
 });
 
 await step('overlapping booking is refused, back-to-back next-weekday booking succeeds, and calendar shows busy', async () => {
