@@ -57,7 +57,7 @@ const PAGES = {
   '/register': { view: 'pages/register.html', title: 'Create your account', script: 'register.js' },
   '/account': { view: 'pages/account.html', title: 'My account', script: 'account.js', auth: 'user' },
   '/admin': { view: 'pages/admin.html', title: 'Admin panel', script: 'admin.js', auth: 'staff' },
-  '/rental-disclaimer': { view: 'legal/disclaimer.html', title: 'Rental disclaimer & insurance requirements' },
+  '/rental-disclaimer': { view: 'legal/disclaimer.html', title: 'Rental disclaimer' },
   '/founder-welcome': { view: 'legal/founder-welcome.html', title: 'Founder Welcome' },
   '/privacy': { view: 'legal/privacy.html', title: 'Privacy Policy' },
   '/terms': { view: 'legal/terms.html', title: 'Terms of Service' },

@@ -218,7 +218,7 @@ async function handleReturnParams() {
     sessionStorage.removeItem('kangoo.licenceResult');
     const msg = lic
       ? `Welcome to Kangoo Rental! ${lic.notes || ''}`
-      : 'Welcome to Kangoo Rental! Your supporter account is ready. Complete your details, licence, and insurance to book.';
+      : 'Welcome to Kangoo Rental! Your supporter account is ready. Complete your details and licence verification to book.';
     say(msg, lic?.status === 'rejected' ? 'error' : 'success');
   }
   if (params.has('booking_paid') || params.has('booking_cancelled') || params.has('booked') || params.has('welcome') || params.has('session_id') || params.has('booking_id')) {

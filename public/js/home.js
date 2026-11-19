@@ -353,9 +353,6 @@ function renderAuthPanel() {
         &middot; <button class="link-button" type="button" id="bkCheckLocation">Check my location</button></li>`);
   const licenceOk = me.licenceStatus === 'verified';
   items.push(`<li class="${licenceOk ? 'ok' : 'todo'}">Driver licence ${licenceOk ? 'verified' : `<a href="/account#licence">${me.licenceStatus === 'pending' ? 'awaiting review' : 'needs verifying'}</a>`}</li>`);
-  const insOk = me.insurer && me.indemnityConfirmed && me.policyExpiry;
-  // Hidden for now at booking time; insurance remains optional under Account -> Insurance.
-  items.push(`<li class="${insOk ? 'ok' : 'todo'}" id="bkInsuranceItem" data-testid="bk-insurance-item" hidden>Insurance ${insOk ? `on file (${escapeHtml(me.insurer)}, expires ${escapeHtml(me.policyExpiry)})` : '<a href="/account#insurance">add your insurance details</a>'}</li>`);
   $('checklist').innerHTML = `<ul>${items.join('')}</ul>`;
 }
 
@@ -409,7 +406,7 @@ async function submitBooking(e) {
     window.location.href = '/register';
     return;
   }
-  if (!$('bkDisclaimer').checked) return showError(errEl, new Error('Please accept the rental disclaimer and insurance requirements.'));
+  if (!$('bkDisclaimer').checked) return showError(errEl, new Error('Please accept the rental disclaimer.'));
 
   const btn = $('bkSubmit');
   setBusy(btn, true, 'Checking your location…');

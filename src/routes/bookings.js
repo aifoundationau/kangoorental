@@ -141,7 +141,7 @@ router.post('/bookings', requireUser, async (req, res) => {
   const time = str(b.time, { field: 'Pickup time', pattern: /^\d{2}:00$/, max: 5 });
   const days = int(b.days, { field: 'Number of days', min: 1, max: maxRentalDays(settings) });
   const note = str(b.note, { field: 'Note', required: false, max: 500 });
-  if (b.acceptDisclaimer !== true) throw new HttpError(400, 'You must accept the rental disclaimer and insurance requirements.');
+  if (b.acceptDisclaimer !== true) throw new HttpError(400, 'You must accept the rental disclaimer.');
   // The van can only be picked up and returned on the owner's available days (set by the superadmin).
   const handover = handoverRules(settings);
   const returnDate = addDays(date, days);
